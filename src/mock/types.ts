@@ -34,7 +34,8 @@ export interface Counterparty {
   viber?: string
 }
 
-export type Occasion = { kind: 'reserve' | 'rent'; code: string; label: string }
+/** `until` — кінець строку оренди (з урахуванням продовжень), як його знає прод. */
+export type Occasion = { kind: 'reserve' | 'rent'; code: string; label: string; until?: Iso }
 
 interface EventBase {
   id: string

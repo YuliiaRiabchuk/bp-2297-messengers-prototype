@@ -46,10 +46,11 @@ export function episodesOf(t: Thread, now: Iso): Episode[] {
     if (!cur || isLink(e) || (prev && minutesBetween(prev.at, e.at) > GAP_MIN)) groups.push([e])
     else cur.push(e)
   }
-  // Оренда, що триває: звернення без власного приводу посеред оренди стосується її
-  // (продовження, оплата, рахунок), а не «нічого не вийшло».
-  let activeRent: { o: Occasion; at: Iso } | null = null
-  const RENT_ALIVE_MIN = 45 * 24 * 60
+  // Оренда, що триває: звернення без власного приводу, яке почалось у строк
+  // оренди, стосується її (продовження, оплата, рахунок), а не «нічого не
+  // вийшло». Строк — `until` оренди; оренда без строку нічого не передає, а
+  // звернення після її кінця — новий запит, не продовження старого.
+  let activeRent: Occasion | null = null
   return groups.map((events, index) => {
     const last = index === groups.length - 1
     const end = events[events.length - 1].at
@@ -80,12 +81,12 @@ export function episodesOf(t: Thread, now: Iso): Episode[] {
     const closed = !last || closedByHand || minutesBetween(end, now) > GAP_MIN
     const status: EpisodeStatus = closed ? 'closed' : waitingSince ? 'waiting_us' : lastUs >= 0 ? 'waiting_client' : 'open'
     let inherited = false
-    if (!occasion && activeRent && minutesBetween(activeRent.at, events[0].at) <= RENT_ALIVE_MIN) {
-      occasion = activeRent.o
+    if (!occasion && activeRent?.until && events[0].at <= activeRent.until) {
+      occasion = activeRent
       result = 'rent'
       inherited = true
     }
-    if (result === 'rent' && occasion && !inherited) activeRent = { o: occasion, at: events[0].at }
+    if (result === 'rent' && occasion && !inherited) activeRent = occasion
     if (closed && !result) result = 'none'
     const channels = [...new Set(events.flatMap((e) => (e.kind === 'msg' ? [e.channel] : [])))]
     return { index, events, start: events[0].at, end, occasion, status, result, waitingSince: closed ? null : waitingSince, channels, inherited }

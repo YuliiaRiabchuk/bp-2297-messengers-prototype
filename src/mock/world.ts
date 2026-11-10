@@ -100,7 +100,7 @@ function backgroundThreads(): Thread[] {
       ],
     }),
     thread({ counterpartyId: 'bg4', events: [call(today('11:20'), 'missed', { waitSec: 41 })] }),
-    thread({ counterpartyId: 'bg5', events: [call(today('11:41'), 'in', { talkSec: 305, purpose: 'Замовлення', summary: 'Бетонозмішувач 160 л на тиждень, доставка завтра.', created: { kind: 'rent', code: 'А-7R2MC', label: 'Бетонозмішувач 160 л' } })] }),
+    thread({ counterpartyId: 'bg5', events: [call(today('11:41'), 'in', { talkSec: 305, purpose: 'Замовлення', summary: 'Бетонозмішувач 160 л на тиждень, доставка завтра.', created: { kind: 'rent', code: 'А-7R2MC', label: 'Бетонозмішувач 160 л', until: '2026-11-16T11:41' } })] }),
     thread({
       counterpartyId: 'bg6',
       takenBy: { staffId: 'oksana', at: '2026-11-08T17:12' },
@@ -245,7 +245,7 @@ const SCENES: Record<string, () => SceneBuild> = {
       id: 'th-pavl',
       counterpartyId: cp.id,
       events: [
-        call('2026-10-21T14:10', 'in', { talkSec: 76, purpose: 'Замовлення', summary: 'Болгарка на 2 доби, Куренівка.', created: { kind: 'rent', code: 'А-6BG2K', label: 'Болгарка Makita GA9020' } }),
+        call('2026-10-21T14:10', 'in', { talkSec: 76, purpose: 'Замовлення', summary: 'Болгарка на 2 доби, Куренівка.', created: { kind: 'rent', code: 'А-6BG2K', label: 'Болгарка Makita GA9020', until: '2026-10-23T14:10' } }),
         msg(today('18:40'), 'telegram', 'client', 'Добрий вечір. Завтра зранку потрібен відбійний молоток, на 2 доби. Встигну забрати о 8?'),
       ],
     })
@@ -436,7 +436,8 @@ function regularHistory(): ThreadEvent[] {
   }
   // Останній місяць: ціна → резерв → оренда → продовження, і зараз чекаємо клієнта.
   const SCAF_RES = { kind: 'reserve' as const, code: 'Р-2QX8N', label: 'Риштування рамні 120 м²' }
-  const SCAF_RENT = { kind: 'rent' as const, code: 'А-9PL3D', label: 'Риштування рамні 120 м²' }
+  // Оренда з 20.10, 27.10 продовжена до 17.11.
+  const SCAF_RENT = { kind: 'rent' as const, code: 'А-9PL3D', label: 'Риштування рамні 120 м²', until: '2026-11-17T10:00' }
   ev.push(
     call('2026-10-13T10:05', 'in', { operatorId: 'alisa', talkSec: 312, purpose: 'Замовлення', summary: 'Риштування 120 м² на ЖК на Оболоні з 20.10, просять ціну з доставкою.' }),
     msg('2026-10-13T11:30', 'telegram', 'staff', 'Комплект 120 м²: 2 980 грн/доба, доставка й монтаж 4 500 грн. Рахунок надішлю після підтвердження.', { staffId: 'alisa' }),
