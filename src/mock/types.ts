@@ -7,7 +7,7 @@
 export type Iso = string
 
 /** Канал повідомлення. `viber-notify` — одностороннє сповіщення TurboSMS (BP-1803), не чат-бот. */
-export type MsgChannel = 'telegram' | 'viber' | 'site' | 'sms' | 'viber-notify'
+export type MsgChannel = 'telegram' | 'viber' | 'whatsapp' | 'site' | 'sms' | 'viber-notify'
 
 export type Delivery = 'delivered' | 'queued' | 'failed'
 

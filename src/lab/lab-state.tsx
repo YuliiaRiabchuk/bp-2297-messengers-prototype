@@ -16,10 +16,20 @@ import { ROLES, VARIANTS, type Role } from './variants'
  * бо посилання, кинуте в чат, має відкрити рівно той кадр, який бачив
  * відправник.
  */
+/** Q3: де в картці контрагента живе листування (для А, Б, В). */
+export type CardLayout = 'widget' | 'history' | 'tabs'
+export const CARD_LAYOUTS: { key: CardLayout; label: string; note: string }[] = [
+  { key: 'widget', label: 'Віджет', note: '«Комунікації» на всю ширину одразу під «Орендами та резервами»' },
+  { key: 'history', label: 'В «Історії»', note: 'листування на місці «Історії» в лівій колонці спліта' },
+  { key: 'tabs', label: 'Вкладки', note: 'у картці зʼявляються вкладки, «Комунікації» — окрема' },
+]
+const isLayout = (v: string | null | undefined): v is CardLayout => v === 'widget' || v === 'history' || v === 'tabs'
+
 interface ViewState {
   sceneId: string
   variant: string
   role: Role
+  card: CardLayout
 }
 
 interface LabState extends ViewState {
@@ -29,6 +39,7 @@ interface LabState extends ViewState {
   setScene: (sceneId: string) => void
   setVariant: (code: string) => void
   setRole: (role: Role) => void
+  setCard: (card: CardLayout) => void
   hidden: boolean
   setHidden: (v: boolean) => void
 }
@@ -51,6 +62,8 @@ function readUrl(): Partial<ViewState> & { hidden?: boolean } {
   if (isVariant(v)) out.variant = v
   const role = q.get('role')
   if (isRole(role)) out.role = role
+  const card = q.get('card')
+  if (isLayout(card)) out.card = card
   if (q.get('lab') === 'off') out.hidden = true
   return out
 }
@@ -72,6 +85,7 @@ export function LabProvider({ children }: { children: ReactNode }) {
     sceneId: (SCENE_BY_ID.get(url.sceneId ?? stored.sceneId ?? '') ?? SCENES[0]).id,
     variant: url.variant ?? (isVariant(stored.variant) ? stored.variant : VARIANTS[0].code),
     role: url.role ?? (isRole(stored.role) ? stored.role : 'operator'),
+    card: url.card ?? (isLayout(stored.card) ? stored.card : 'widget'),
   })
   const [hidden, setHidden] = useState(Boolean(url.hidden))
   const [nonce, setNonce] = useState(0)
@@ -82,6 +96,7 @@ export function LabProvider({ children }: { children: ReactNode }) {
     q.set('v', view.variant)
     q.set('scene', view.sceneId)
     q.set('role', view.role)
+    q.set('card', view.card)
     if (hidden) q.set('lab', 'off')
     else q.delete('lab')
     window.history.replaceState(null, '', `${window.location.pathname}?${q}`)
@@ -114,6 +129,7 @@ export function LabProvider({ children }: { children: ReactNode }) {
       },
       setVariant: (variant) => setView((v) => ({ ...v, variant })),
       setRole: (role) => setView((v) => ({ ...v, role })),
+      setCard: (card) => setView((v) => ({ ...v, card })),
       hidden,
       setHidden,
     }),

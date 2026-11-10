@@ -89,7 +89,13 @@ const BG: Counterparty[] = [
 function backgroundThreads(): Thread[] {
   return [
     thread({ counterpartyId: 'bg1', events: [call(today('08:47'), 'in', { talkSec: 132, purpose: 'Замовлення', summary: 'Перфоратор на 2 доби, Куренівка; створено резерв.', created: { kind: 'reserve', code: 'Р-3K9TA', label: 'Перфоратор Bosch GBH 2-26' } })] }),
-    thread({ counterpartyId: 'bg2', events: [call(today('09:15'), 'out', { talkSec: 248, operatorId: 'karyna', purpose: 'Консультація', summary: 'Уточнили графік повернення риштувань.' })] }),
+    thread({
+      counterpartyId: 'bg2',
+      events: [
+        call(today('09:15'), 'out', { talkSec: 248, operatorId: 'karyna', purpose: 'Консультація', summary: 'Уточнили графік повернення риштувань.' }),
+        msg(today('09:40'), 'whatsapp', 'client', 'Надішліть, будь ласка, рахунок на продовження риштувань до кінця місяця.'),
+      ],
+    }),
     thread({
       counterpartyId: 'bg3',
       takenBy: { staffId: 'karyna', at: today('10:22') },

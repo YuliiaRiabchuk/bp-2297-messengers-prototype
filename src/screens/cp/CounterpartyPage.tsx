@@ -8,6 +8,8 @@ import { dayLabel, dayOf, fmtDuration, shortDate, timeOf } from '@/lib/time'
 import { useNav } from '@/state/nav'
 import { useStore } from '@/state/store'
 import type { Counterparty, Occasion, Thread, ThreadEvent, World } from '@/mock/types'
+import { useLab, type CardLayout } from '@/lab/lab-state'
+import { Proposal } from '@/components/proposal'
 
 /**
  * Картка контрагента за `features/counterparties/detail/widgets/layout.ts`
@@ -21,6 +23,12 @@ import type { Counterparty, Occasion, Thread, ThreadEvent, World } from '@/mock/
  * «Історії»).
  */
 export interface CardSlots {
+  /**
+   * Листування нових варіантів. Картка сама ставить його за положенням з
+   * «Кадрів» (Q3): віджет під «Орендами та резервами», на місці «Історії» або
+   * окремою вкладкою.
+   */
+  comms?: (cp: Counterparty, t: Thread | null, layout: CardLayout) => ReactNode
   fullAfterOps?: (cp: Counterparty, t: Thread | null) => ReactNode
   leftTop?: (cp: Counterparty, t: Thread | null) => ReactNode
   /** Сховати прод-«Історію» (варіант заміняє її своєю). */
@@ -31,9 +39,13 @@ export interface CardSlots {
 export function CounterpartyPage({ id, slots = {} }: { id: string; slots?: CardSlots }) {
   const { world } = useStore()
   const { go } = useNav()
+  const { card: layout } = useLab()
+  const [tab, setTab] = useState<'card' | 'comms'>('card')
   const cp = cpById(world, id)
   if (!cp) return <WidgetEmpty>Контрагента не знайдено.</WidgetEmpty>
   const thread = threadOfCp(world, cp.id)
+  const comms = slots.comms
+  const tabs = !!comms && layout === 'tabs'
 
   return (
     <div className="flex h-full flex-col" data-testid="cp-page">
@@ -61,17 +73,44 @@ export function CounterpartyPage({ id, slots = {} }: { id: string; slots?: CardS
         </div>
       </div>
 
+      {tabs && (
+        <div className="flex shrink-0 items-end gap-5 border-b border-border px-4" role="tablist" aria-label="Розділи картки">
+          {(['card', 'comms'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k)}
+              data-walk-month={k === 'comms' ? '' : undefined}
+              className={cn(
+                '-mb-px inline-flex items-center gap-1.5 border-b-[3px] px-0.5 py-2 text-body font-medium',
+                tab === k ? 'border-fg text-fg' : 'border-transparent text-muted-fg hover:text-fg',
+              )}
+            >
+              {k === 'card' ? 'Картка' : 'Комунікації'}
+              {k === 'comms' && <Proposal />}
+            </button>
+          ))}
+        </div>
+      )}
+      {tabs && tab === 'comms' ? (
+        <div className="min-h-0 flex-1 bg-canvas p-4" data-testid="card-scroll">
+          {comms!(cp, thread, 'tabs')}
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-auto bg-canvas p-4" data-testid="card-scroll">
         <div className="flex flex-col gap-3.5">
           <OpsWidget world={world} cp={cp} thread={thread} />
           {slots.fullAfterOps?.(cp, thread)}
+          {comms && layout === 'widget' && comms(cp, thread, 'widget')}
           <InterestsWidget cp={cp} />
           <EquipmentWidget thread={thread} />
           <LedgerWidget cp={cp} />
           <div className="grid grid-cols-[1.5fr_1fr] gap-3.5">
             <div className="flex min-w-0 flex-col gap-3.5">
               {slots.leftTop?.(cp, thread)}
-              {!slots.hideHistory && <HistoryWidget world={world} thread={thread} extra={slots.historyExtra} />}
+              {comms && layout === 'history' ? comms(cp, thread, 'history') : !slots.hideHistory && <HistoryWidget world={world} thread={thread} extra={slots.historyExtra} />}
             </div>
             <div className="flex min-w-0 flex-col gap-3.5">
               <TasksWidget world={world} cp={cp} />
@@ -82,6 +121,7 @@ export function CounterpartyPage({ id, slots = {} }: { id: string; slots?: CardS
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

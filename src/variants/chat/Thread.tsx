@@ -11,6 +11,7 @@ import {
   Globe,
   Link2,
   MessageCircle,
+  MessageCircleMore,
   MessageSquareText,
   Phone,
   Search,
@@ -30,7 +31,8 @@ import { useLab } from '@/lab/lab-state'
 import { useNav } from '@/state/nav'
 import { useStore } from '@/state/store'
 import type { Counterparty, MsgChannel, MsgEvent, Thread as ThreadT, ThreadEvent, World } from '@/mock/types'
-import { episodeSummary, episodesOf, RESULT_LABEL, STATUS_LABEL, waitMin, SLA_MIN, type Episode } from './episodes'
+import { ownerOf } from './owner'
+import { flatEpisode, periodEpisode, episodeSummary, episodesOf, RESULT_LABEL, STATUS_LABEL, waitMin, SLA_MIN, type Episode } from './episodes'
 
 /**
  * ВІКНО ЛИСТУВАННЯ — один компонент на всі чотири точки входу (§4 брифу,
@@ -44,6 +46,7 @@ import { episodeSummary, episodesOf, RESULT_LABEL, STATUS_LABEL, waitMin, SLA_MI
 
 export const CHANNEL_META: Record<MsgChannel | 'call', { label: string; icon: typeof Send }> = {
   telegram: { label: 'Telegram', icon: Send },
+  whatsapp: { label: 'WhatsApp', icon: MessageCircleMore },
   viber: { label: 'Viber', icon: MessageCircle },
   site: { label: 'Чат на сайті', icon: Globe },
   sms: { label: 'SMS', icon: MessageSquareText },
@@ -71,7 +74,7 @@ const DELIVERY = {
 /** Канали, якими можна відповісти: чат-канали, у які клієнт уже писав (бот не пише першим), і SMS. */
 function replyChannels(t: ThreadT, cp: Counterparty | null): MsgChannel[] {
   const used = new Set<MsgChannel>()
-  for (const e of t.events) if (e.kind === 'msg' && e.from === 'client' && (e.channel === 'telegram' || e.channel === 'viber')) used.add(e.channel)
+  for (const e of t.events) if (e.kind === 'msg' && e.from === 'client' && (e.channel === 'telegram' || e.channel === 'viber' || e.channel === 'whatsapp')) used.add(e.channel)
   const out: MsgChannel[] = [...used]
   const phone = cp?.phone ?? sharedPhone(t)
   if (phone) out.push('sms')
@@ -81,7 +84,7 @@ function replyChannels(t: ThreadT, cp: Counterparty | null): MsgChannel[] {
 function lastClientChannel(t: ThreadT): MsgChannel | null {
   for (let i = t.events.length - 1; i >= 0; i--) {
     const e = t.events[i]
-    if (e.kind === 'msg' && e.from === 'client' && (e.channel === 'telegram' || e.channel === 'viber')) return e.channel
+    if (e.kind === 'msg' && e.from === 'client' && (e.channel === 'telegram' || e.channel === 'viber' || e.channel === 'whatsapp')) return e.channel
   }
   return null
 }
@@ -100,10 +103,19 @@ export function Thread({
   intent,
   onClose,
   focusEpisode,
+  mode = 'episodes',
+  readOnly,
 }: {
   threadId: string
   host: 'drawer' | 'card'
-  intent?: 'sms'
+  /**
+   * `episodes` — Б: тред нарізаний на звернення. `flat` — А: один тред без меж,
+   * зведення за період. `current` — В: тільки поточне звернення, решта в картці.
+   */
+  mode?: 'episodes' | 'flat' | 'current'
+  /** В: картка — архів для читання; «Відповісти» відкриває вікно в дровері. */
+  readOnly?: boolean
+  intent?: 'sms' | 'reply'
   onClose?: () => void
   /** Звернення, до якого прокрутити (клік у списку звернень картки). */
   focusEpisode?: { index: number; nonce: number }
@@ -133,7 +145,8 @@ export function Thread({
       if (typing || e.ctrlKey || e.metaKey || e.altKey) return
       if (e.code === 'KeyT' && t) {
         e.preventDefault()
-        if (role !== 'head' && (!t.takenBy || t.takenBy.staffId === meId)) {
+        const owner = ownerOf(world, t)
+        if (role !== 'head' && (!owner || owner.staffId === meId)) {
           dispatch({ type: 'TAKE', threadId: t.id, staffId: meId })
           requestAnimationFrame(() => composerRef.current?.focus())
         }
@@ -141,7 +154,12 @@ export function Thread({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [host, t, role, meId, dispatch, onClose])
+  }, [host, t, role, meId, dispatch, onClose, world])
+
+  // «Наступне» у В відкриває вікно одразу для відповіді.
+  useEffect(() => {
+    if (intent === 'reply') requestAnimationFrame(() => composerRef.current?.focus())
+  }, [intent, threadId])
 
   // Стрічка стоїть на кінці: остання подія — те, що зараз відбувається.
   const count = t?.events.length ?? 0
@@ -160,16 +178,35 @@ export function Thread({
   }, [focusEpisode, firstShown])
 
   if (!t) return null
+  const flat = mode === 'flat' ? flatEpisode(t, world.now) : null
+  const stripEpisodes = flat ? [flat] : episodes
+  const noMessages = !t.events.some((e) => e.kind === 'msg')
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-chat-component="thread" data-thread-host={host} data-testid="thread">
       {host === 'drawer' && <ThreadHeader world={world} t={t} cp={cp} onClose={onClose} />}
       {!cp && <BindBar world={world} t={t} />}
-      <TakenStrip world={world} t={t} episodes={episodes} meId={meId} role={role} onTook={() => composerRef.current?.focus()} />
+      <TakenStrip world={world} t={t} episodes={stripEpisodes} meId={meId} role={role} readOnly={readOnly} onTook={() => composerRef.current?.focus()} />
+      {mode === 'flat' && !noMessages && (
+        <div className="shrink-0 border-b border-border bg-bg/60 px-3.5 pt-2.5">
+          <PeriodSummary world={world} t={t} />
+        </div>
+      )}
       <div ref={feedRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-bg/60 px-3.5 py-3" data-testid="thread-feed">
-        {episodes.length === 0 || !episodes.some((ep) => ep.events.some((e) => e.kind === 'msg')) ? (
-          <EmptyChat hasCalls={t.events.some((e) => e.kind === 'call')} />
-        ) : null}
+        {noMessages && <EmptyChat hasCalls={t.events.some((e) => e.kind === 'call')} />}
+        {mode === 'flat' ? (
+          <>
+            <EventList world={world} events={t.events} cp={cp} t={t} />
+          </>
+        ) : mode === 'current' ? (
+          <>
+            {episodes.length > 1 && <EarlierInCard t={t} n={episodes.length - 1} host={host} />}
+            {episodes.slice(-1).map((ep) => (
+              <EpisodeBlock key={ep.index} world={world} ep={ep} last cp={cp} t={t} />
+            ))}
+          </>
+        ) : (
+          <>
         {firstShown > 0 && (
           <button type="button" onClick={() => setShowOld(true)} className="mb-3 w-full rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-label font-medium text-fg-2 hover:bg-card">
             Ще {firstShown} {firstShown === 1 ? 'звернення' : 'звернень'} раніше, з {shortDate(episodes[0].start)}.{episodes[0].start.slice(2, 4)}
@@ -178,8 +215,10 @@ export function Thread({
         {episodes.slice(firstShown).map((ep) => (
           <EpisodeBlock key={ep.index} world={world} ep={ep} last={ep.index === episodes.length - 1} cp={cp} t={t} />
         ))}
+          </>
+        )}
       </div>
-      <Composer world={world} t={t} cp={cp} meId={meId} role={role} intent={intent} textareaRef={composerRef} />
+      {readOnly ? <ReadOnlyBar t={t} /> : <Composer world={world} t={t} cp={cp} meId={meId} role={role} intent={intent} textareaRef={composerRef} />}
     </div>
   )
 }
@@ -295,6 +334,7 @@ function TakenStrip({
   episodes,
   meId,
   role,
+  readOnly,
   onTook,
 }: {
   world: World
@@ -302,12 +342,14 @@ function TakenStrip({
   episodes: Episode[]
   meId: string
   role: string
+  readOnly?: boolean
   onTook: () => void
 }) {
   const { dispatch } = useStore()
   const cur = episodes[episodes.length - 1]
-  const taker = staffById(world, t.takenBy?.staffId)
-  const mine = t.takenBy?.staffId === meId
+  const owner = ownerOf(world, t)
+  const taker = staffById(world, owner?.staffId)
+  const mine = owner?.staffId === meId
   const wait = waitMin(cur ?? null, world.now)
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
@@ -319,9 +361,10 @@ function TakenStrip({
         {taker ? (
           <span className="inline-flex items-center gap-1.5 text-label text-fg-2" data-taken-by={taker.id}>
             <Avatar name={taker.name} size={5} tone={mine ? 'accent' : 'muted'} />
-            {mine ? 'Веду я' : `Веде ${taker.name}`} з {timeOf(t.takenBy!.at)}
+            {mine ? 'Веду я' : `Веде ${taker.name}`}
+            {owner!.responsible ? ' · відповідальний менеджер' : ` з ${timeOf(owner!.at)}`}
           </span>
-        ) : role !== 'head' ? (
+        ) : role !== 'head' && !readOnly ? (
           <button
             type="button"
             onClick={() => {
@@ -336,7 +379,7 @@ function TakenStrip({
         ) : (
           <span className="text-label text-muted-fg">Ніхто не взяв</span>
         )}
-        {cur && cur.status !== 'closed' && (mine || role === 'manager') && (
+        {!readOnly && cur && cur.status !== 'closed' && (mine || role === 'manager') && (
           <button
             type="button"
             onClick={() => dispatch({ type: 'CLOSE', threadId: t.id })}
@@ -367,7 +410,92 @@ export function StatusBadge({ ep, now }: { ep: Episode; now: string }) {
   )
 }
 
+/* ─── А: зведення за період ────────────────────────────────────────── */
+
+const PERIODS: { days: number | null; label: string }[] = [
+  { days: 7, label: '7 днів' },
+  { days: 30, label: '30 днів' },
+  { days: null, label: 'Усе' },
+]
+
+function PeriodSummary({ world, t }: { world: World; t: ThreadT }) {
+  const [days, setDays] = useState<number | null>(7)
+  const ep = periodEpisode(t, world.now, days)
+  // Зведення за місяць у ЮЛ — AI-зведення з моків, решта — за правилом.
+  const s = episodeSummary(ep, days === 30 ? t.summary : undefined)
+  return (
+    <section className="mb-2.5 max-h-40 overflow-y-auto rounded-lg border border-border bg-card px-3 py-2" data-answer-month={days === 30 ? '' : undefined}>
+      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+        <span className="flex items-center gap-1 text-mono font-semibold uppercase tracking-wider text-violet-fg">
+          <Sparkles className="size-3" aria-hidden /> AI-зведення
+        </span>
+        <Proposal />
+        <span className="ml-auto flex gap-0.5" role="radiogroup" aria-label="Період зведення">
+          {PERIODS.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              role="radio"
+              aria-checked={days === p.days}
+              onClick={() => setDays(p.days)}
+              data-walk-month={p.days === 30 ? '' : undefined}
+              className={cn('rounded-md px-1.5 py-0.5 text-label font-medium', days === p.days ? 'bg-fg text-primary-fg' : 'text-fg-2 hover:bg-muted')}
+            >
+              {p.label}
+            </button>
+          ))}
+        </span>
+      </div>
+      <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-label [overflow-wrap:anywhere]">
+        <dt className="text-muted-fg">Просив</dt>
+        <dd className="text-fg">{s.asked}</dd>
+        <dt className="text-muted-fg">Дали</dt>
+        <dd className="text-fg">{s.given}</dd>
+        <dt className="text-muted-fg">Домовились</dt>
+        <dd className="text-fg">{s.agreed}</dd>
+        <dt className="text-muted-fg">Далі</dt>
+        <dd className="font-medium text-fg">{s.next}</dd>
+      </dl>
+    </section>
+  )
+}
+
+/* ─── В: решта звернень — у картці; картка — для читання ───────────── */
+
+function EarlierInCard({ t, n, host }: { t: ThreadT; n: number; host: 'drawer' | 'card' }) {
+  const { go } = useNav()
+  const word = n === 1 ? 'звернення' : 'звернень'
+  if (host !== 'drawer' || !t.counterpartyId) return <p className="mb-3 text-center text-label text-muted-fg">Ще {n} {word} раніше</p>
+  return (
+    <button
+      type="button"
+      onClick={() => go({ screen: 'cp', id: t.counterpartyId! })}
+      className="mb-3 w-full rounded-lg border border-dashed border-border-strong px-3 py-2 text-left text-label font-medium text-fg-2 hover:bg-card"
+    >
+      Ще {n} {word} раніше — в архіві картки контрагента
+    </button>
+  )
+}
+
+function ReadOnlyBar({ t }: { t: ThreadT }) {
+  const { openDrawer } = useNav()
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-t border-border bg-bg px-4 py-2">
+      <span className="text-label text-muted-fg">Архів для читання. Відповідь — у вікні звернення.</span>
+      <button
+        type="button"
+        onClick={() => openDrawer({ kind: 'thread', id: t.id })}
+        className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-md bg-fg px-2.5 text-label font-semibold text-primary-fg hover:bg-fg-2"
+        data-reply-open=""
+      >
+        <Send className="size-3.5" aria-hidden /> Відповісти
+      </button>
+    </div>
+  )
+}
+
 /* ─── стрічка ──────────────────────────────────────────────────────── */
+
 
 function EmptyChat({ hasCalls }: { hasCalls: boolean }) {
   return (
@@ -385,9 +513,7 @@ const PAGE = 80
 
 function EpisodeBlock({ world, ep, last, cp, t }: { world: World; ep: Episode; last: boolean; cp: Counterparty | null; t: ThreadT }) {
   const [open, setOpen] = useState(last)
-  const [all, setAll] = useState(false)
   const s = episodeSummary(ep, last && ep.index === 0 ? t.summary : undefined)
-  const shown = all ? ep.events : ep.events.slice(-PAGE)
   return (
     <section className={cn('mb-3', !last && 'opacity-95')} data-episode={ep.index}>
       <button
@@ -430,11 +556,20 @@ function EpisodeBlock({ world, ep, last, cp, t }: { world: World; ep: Episode; l
           )}
         </span>
       </button>
-      {open && (
+      {open && <EventList world={world} events={ep.events} cp={cp} t={t} />}
+    </section>
+  )
+}
+
+/** Події в порядку часу з розділювачами днів і пауз; довгий тред — останні 80. */
+function EventList({ world, events, cp, t }: { world: World; events: ThreadEvent[]; cp: Counterparty | null; t: ThreadT }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? events : events.slice(-PAGE)
+  return (
         <div className="mt-2.5 flex flex-col gap-2">
-          {!all && ep.events.length > PAGE && (
+          {!all && events.length > PAGE && (
             <button type="button" onClick={() => setAll(true)} className="self-center rounded-md px-2 py-1 text-label font-medium text-accent-fg hover:bg-muted">
-              Показати ранні {ep.events.length - PAGE}
+              Показати ранні {events.length - PAGE}
             </button>
           )}
           {shown.map((e, i) => {
@@ -460,8 +595,6 @@ function EpisodeBlock({ world, ep, last, cp, t }: { world: World; ep: Episode; l
             )
           })}
         </div>
-      )}
-    </section>
   )
 }
 
@@ -587,7 +720,7 @@ function Composer({
   cp: Counterparty | null
   meId: string
   role: string
-  intent?: 'sms'
+  intent?: 'sms' | 'reply'
   textareaRef: React.RefObject<HTMLTextAreaElement>
 }) {
   const { dispatch } = useStore()
@@ -601,12 +734,15 @@ function Composer({
   const [channel, setChannel] = useState<MsgChannel | null>(preferred)
   const [text, setText] = useState(() => (intent === 'sms' && t.aiDraft ? t.aiDraft : ''))
   const [aiDraft, setAiDraft] = useState(intent === 'sms' && !!t.aiDraft)
-  const takenByOther = !!t.takenBy && t.takenBy.staffId !== meId && role === 'operator'
+  const owner = ownerOf(world, t)
+  const takenByOther = !!owner && owner.staffId !== meId && role === 'operator'
   const isHead = role === 'head'
   const disabledReason = isHead
     ? 'Керівник читає листування; відповідає оператор або менеджер.'
     : takenByOther
-      ? `Звернення веде ${staffById(world, t.takenBy!.staffId)?.name}. Відповідати може тільки той, хто взяв.`
+      ? owner!.responsible
+        ? `Клієнта веде відповідальний менеджер ${staffById(world, owner!.staffId)?.name}.`
+        : `Звернення веде ${staffById(world, owner!.staffId)?.name}. Відповідати може тільки той, хто взяв.`
       : null
 
   if (!options.length || !channel)
@@ -660,7 +796,7 @@ function Composer({
             {CHANNEL_META[o].label}
           </button>
         ))}
-        {!cp && !sharedPhone(t) && (channel === 'telegram' || channel === 'viber') && (
+        {!cp && !sharedPhone(t) && (channel === 'telegram' || channel === 'viber' || channel === 'whatsapp') && (
           <button type="button" onClick={askContact} disabled={!!disabledReason} className="ml-auto rounded-md px-1.5 py-0.5 text-label font-medium text-accent-fg hover:bg-accent-soft disabled:opacity-50" data-ask-contact="">
             Попросити контакт
           </button>

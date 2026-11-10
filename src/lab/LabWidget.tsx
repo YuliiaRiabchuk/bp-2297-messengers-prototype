@@ -8,7 +8,7 @@ import {
   FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useLab } from './lab-state'
+import { CARD_LAYOUTS, useLab } from './lab-state'
 import { ROLES, ROLE_LABEL, VARIANTS } from './variants'
 import { SCENES } from './scenes'
 
@@ -203,6 +203,21 @@ export function LabWidget() {
               </Chip>
             ))}
           </div>
+        </section>
+
+        {/* ── Картка (Q3) ───────────────────────────────────────────── */}
+        <section className="border-b border-border px-3 py-2.5">
+          <Label>Картка · листування</Label>
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {CARD_LAYOUTS.map((c) => (
+              <Chip key={c.key} active={lab.card === c.key} onClick={() => lab.setCard(c.key)} title={c.note} disabled={lab.variant.startsWith('0')}>
+                {c.label}
+              </Chip>
+            ))}
+          </div>
+          <p className="mt-1.5 text-label text-muted-fg">
+            {lab.variant.startsWith('0') ? 'Для А, Б, В: у 0 і 0б листування в картці таке, як є.' : CARD_LAYOUTS.find((c) => c.key === lab.card)?.note}
+          </p>
         </section>
 
         {/* ── Роль ──────────────────────────────────────────────────── */}

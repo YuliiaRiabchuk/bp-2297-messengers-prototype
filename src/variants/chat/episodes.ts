@@ -145,3 +145,51 @@ export function episodeSummary(ep: Episode, override?: Summary): Summary {
           : '—'
   return { asked: clip(asked), given: clip(given), agreed, next }
 }
+
+/**
+ * Варіант А — один тред без звернень. Увесь тред як одне «звернення», що
+ * ніколи не закривається: статус — чий зараз хід, і тільки він.
+ */
+export function flatEpisode(t: Thread, now: Iso): Episode {
+  const ev = t.events
+  let lastClient = -1
+  let lastUs = -1
+  ev.forEach((e, i) => {
+    if (fromClient(e)) lastClient = i
+    if (fromUs(e)) lastUs = i
+  })
+  let waitingSince: Iso | null = null
+  if (lastClient > lastUs) {
+    let i = lastClient
+    while (i - 1 > lastUs && fromClient(ev[i - 1])) i--
+    waitingSince = ev[i].at
+  }
+  return {
+    index: 0,
+    events: ev,
+    start: ev[0]?.at ?? now,
+    end: ev[ev.length - 1]?.at ?? now,
+    occasion: null,
+    status: waitingSince ? 'waiting_us' : lastUs >= 0 ? 'waiting_client' : 'open',
+    result: null,
+    waitingSince,
+    channels: [...new Set(ev.flatMap((e) => (e.kind === 'msg' ? [e.channel] : [])))],
+    inherited: false,
+  }
+}
+
+/** Події треду за останні `days` діб як одне «звернення» — для зведення за період (А). */
+export function periodEpisode(t: Thread, now: Iso, days: number | null): Episode {
+  const ev = days == null ? t.events : t.events.filter((e) => minutesBetween(e.at, now) <= days * 24 * 60)
+  const base = flatEpisode({ ...t, events: ev.length ? ev : t.events.slice(-1) }, now)
+  let occasion: Occasion | null = null
+  let result: EpisodeResult = null
+  for (const e of base.events) {
+    const o = e.kind === 'call' ? e.created : e.kind === 'system' ? e.occasion : undefined
+    if (o) {
+      occasion = o
+      result = o.kind === 'rent' ? 'rent' : result === 'rent' ? 'rent' : 'reserve'
+    }
+  }
+  return { ...base, occasion, result }
+}

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MessageCircle, Repeat2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -13,13 +13,18 @@ import { useNav } from '@/state/nav'
 import { useStore } from '@/state/store'
 import type { MsgEvent, Thread, World } from '@/mock/types'
 import { ChannelGlyph, StatusBadge } from './Thread'
-import { episodesOf, SLA_MIN, waitMin, type Episode } from './episodes'
+import { episodesOf, flatEpisode, periodEpisode, SLA_MIN, waitMin, type Episode } from './episodes'
+import { ownerOf } from './owner'
 
 /**
- * Вкладка «Месенджери» варіанта Б (пропозиція): пул ЗВЕРНЕНЬ. Рядок —
- * поточне звернення клієнта; хто перший взяв, той веде (§3). Відкривається
- * в тому ж дровері, що й дзвінок.
+ * Вкладка «Месенджери» (пропозиція). Хто перший взяв, той веде (§3);
+ * відкривається в тому ж дровері, що й дзвінок. Три види:
+ *  - А — пул КЛІЄНТІВ: рядок — тред клієнта, без меж звернень;
+ *  - Б — пул ЗВЕРНЕНЬ: рядок — поточне звернення;
+ *  - В — ЧЕРГА з SLA: ті самі звернення за дедлайном, «Наступне» (N).
  */
+export type PoolKind = 'A' | 'Б' | 'В'
+const QUIET_MIN = 72 * 60
 
 type Filter = 'open' | 'waiting' | 'mine' | 'myclients' | 'lost' | 'all'
 
@@ -32,11 +37,11 @@ interface PoolRow {
 
 const isChatThread = (t: Thread) => t.events.some((e) => e.kind === 'msg' && e.from === 'client' && e.channel !== 'sms')
 
-export function poolRows(world: World): PoolRow[] {
+export function poolRows(world: World, kind: PoolKind = 'Б'): PoolRow[] {
   const rows: PoolRow[] = []
   for (const t of world.threads) {
     if (!isChatThread(t)) continue
-    const eps = episodesOf(t, world.now)
+    const eps = kind === 'A' ? [flatEpisode(t, world.now)] : episodesOf(t, world.now)
     const ep = eps[eps.length - 1]
     const last = [...ep.events].reverse().find((e): e is MsgEvent => e.kind === 'msg') ?? null
     rows.push({ t, ep, last, wait: waitMin(ep, world.now) })
@@ -44,9 +49,18 @@ export function poolRows(world: World): PoolRow[] {
   return rows
 }
 
-/** Втрачені: звернення, закриті без результату (сцена 7). Одне на клієнта — останнє. */
-function lostRows(world: World): PoolRow[] {
+/**
+ * Втрачені (сцена 7). Б і В: звернення, закриті без результату, одне на
+ * клієнта. А закритих не знає — замінник: клієнт мовчить понад 72 год, і за
+ * місяць не з'явилось ні резерву, ні оренди.
+ */
+function lostRows(world: World, kind: PoolKind = 'Б'): PoolRow[] {
   const rows: PoolRow[] = []
+  if (kind === 'A') {
+    for (const r of poolRows(world, 'A'))
+      if (minutesBetween(r.ep.end, world.now) > QUIET_MIN && !periodEpisode(r.t, world.now, 30).result) rows.push(r)
+    return rows.sort((a, b) => b.ep.end.localeCompare(a.ep.end))
+  }
   for (const t of world.threads) {
     if (!isChatThread(t)) continue
     const ep = [...episodesOf(t, world.now)].reverse().find((e) => e.status === 'closed' && e.result === 'none')
@@ -59,53 +73,89 @@ function lostRows(world: World): PoolRow[] {
 
 const RANK = { waiting_us: 0, open: 1, waiting_client: 2, closed: 3 }
 
-export function waitingCount(world: World) {
-  return poolRows(world).filter((r) => r.ep.status === 'waiting_us').length
+/** Клієнти з відповідальним менеджером — його черга, не операторська (Q6). */
+const managerOwned = (world: World, r: PoolRow) => !!ownerOf(world, r.t)?.responsible
+
+export function waitingCount(world: World, kind: PoolKind = 'Б') {
+  return poolRows(world, kind).filter((r) => r.ep.status === 'waiting_us' && !managerOwned(world, r)).length
 }
 
-export function MessengersTab() {
-  const { world } = useStore()
+const isOpen = (r: PoolRow, kind: PoolKind, now: string) =>
+  kind === 'A' ? r.ep.status === 'waiting_us' || minutesBetween(r.ep.end, now) <= QUIET_MIN : r.ep.status !== 'closed'
+const isWaiting = (r: PoolRow, kind: PoolKind) => (kind === 'В' ? r.wait != null && r.wait > SLA_MIN : r.ep.status === 'waiting_us')
+
+const LABELS: Record<PoolKind, { open: string; waiting: string; lost: string; due: string }> = {
+  A: { open: 'Активні', waiting: 'Без відповіді', lost: 'Мовчать понад 72 год', due: 'Без відповіді' },
+  Б: { open: 'Відкриті', waiting: 'Чекають відповіді', lost: 'Закриті без результату', due: 'Без відповіді' },
+  В: { open: 'Черга', waiting: 'Прострочені SLA', lost: 'Закриті без результату', due: 'Дедлайн' },
+}
+
+export function MessengersTab({ kind = 'Б' }: { kind?: PoolKind }) {
+  const { world, dispatch } = useStore()
   const { role } = useLab()
   const { openDrawer, drawer } = useNav()
   const meId = ME_BY_ROLE[role]
   const [filter, setFilter] = useState<Filter>('open')
   const tbody = useRef<HTMLTableSectionElement>(null)
+  const L = LABELS[kind]
 
-  const all = useMemo(() => poolRows(world), [world])
+  const all = useMemo(() => poolRows(world, kind), [world, kind])
   const rows = useMemo(() => {
-    if (filter === 'lost') return lostRows(world)
+    if (filter === 'lost') return lostRows(world, kind)
     const f = all.filter((r) => {
       switch (filter) {
         case 'open':
-          return r.ep.status !== 'closed'
+          return isOpen(r, kind, world.now)
         case 'waiting':
-          return r.ep.status === 'waiting_us'
+          return isWaiting(r, kind)
         case 'mine':
-          return r.t.takenBy?.staffId === meId
+          return ownerOf(world, r.t)?.staffId === meId
         case 'myclients':
           return cpById(world, r.t.counterpartyId)?.managerId === meId
         case 'all':
           return true
       }
     })
-    return f.sort((a, b) => RANK[a.ep.status] - RANK[b.ep.status] || (b.wait ?? 0) - (a.wait ?? 0) || b.ep.end.localeCompare(a.ep.end))
-  }, [all, filter, world, meId])
+    // Нічиї й мої — вище чужих: оператор бачить зверху те, що може взяти.
+    const foreign = (r: PoolRow) => { const o = ownerOf(world, r.t); return o && o.staffId !== meId ? 1 : 0 }
+    return f.sort((a, b) => RANK[a.ep.status] - RANK[b.ep.status] || foreign(a) - foreign(b) || (b.wait ?? 0) - (a.wait ?? 0) || b.ep.end.localeCompare(a.ep.end))
+  }, [all, filter, world, meId, kind])
 
   const counts = {
-    open: all.filter((r) => r.ep.status !== 'closed').length,
-    waiting: all.filter((r) => r.ep.status === 'waiting_us').length,
-    mine: all.filter((r) => r.t.takenBy?.staffId === meId).length,
-    lost: lostRows(world).length,
+    open: all.filter((r) => isOpen(r, kind, world.now)).length,
+    waiting: all.filter((r) => isWaiting(r, kind)).length,
+    mine: all.filter((r) => ownerOf(world, r.t)?.staffId === meId).length,
+    lost: lostRows(world, kind).length,
   }
 
   const chips: { key: Filter; label: string; count?: number; hidden?: boolean; walk?: string }[] = [
-    { key: 'open', label: 'Відкриті', count: counts.open },
-    { key: 'waiting', label: 'Чекають відповіді', count: counts.waiting },
+    { key: 'open', label: L.open, count: counts.open },
+    { key: 'waiting', label: L.waiting, count: counts.waiting },
     { key: 'mine', label: 'Мої', count: counts.mine, hidden: role === 'head' },
     { key: 'myclients', label: 'Мої клієнти', hidden: role !== 'manager' },
-    { key: 'lost', label: 'Закриті без результату', count: counts.lost, walk: 'lost' },
+    { key: 'lost', label: L.lost, count: counts.lost, walk: 'lost' },
     { key: 'all', label: 'Усі' },
   ]
+
+  // В: «Наступне» — найтерміновіше нічиє звернення: взяти й одразу писати.
+  const nextRow = kind === 'В' && role !== 'head' ? all.filter((r) => r.ep.status === 'waiting_us' && !ownerOf(world, r.t)).sort((a, b) => (b.wait ?? 0) - (a.wait ?? 0))[0] : undefined
+  const takeNext = () => {
+    if (!nextRow) return
+    dispatch({ type: 'TAKE', threadId: nextRow.t.id, staffId: meId })
+    openDrawer({ kind: 'thread', id: nextRow.t.id, intent: 'reply' })
+  }
+  useEffect(() => {
+    if (kind !== 'В') return
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
+      if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyN') {
+        e.preventDefault()
+        takeNext()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   const move = (from: HTMLElement, dir: 1 | -1) => {
     const list = [...(tbody.current?.querySelectorAll<HTMLElement>('[data-pool-row]') ?? [])]
@@ -138,6 +188,18 @@ export function MessengersTab() {
                 )}
               </button>
             ))}
+          {kind === 'В' && role !== 'head' && (
+            <button
+              type="button"
+              onClick={takeNext}
+              disabled={!nextRow}
+              data-next=""
+              className="ml-auto inline-flex h-[30px] items-center gap-1.5 rounded-md bg-fg px-3 text-body font-semibold text-primary-fg hover:bg-fg-2 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Взяти найтерміновіше нічиє звернення (N)"
+            >
+              Наступне <kbd className="rounded-sm bg-white/15 px-1 font-mono text-mono">N</kbd>
+            </button>
+          )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto" data-lost-list={filter === 'lost' ? '' : undefined}>
         <table className={cn('w-full min-w-[860px] table-fixed border-separate border-spacing-0', FULL_BLEED)}>
@@ -156,7 +218,7 @@ export function MessengersTab() {
               <th className={HEAD_CELL}>Контрагент</th>
               <th className={HEAD_CELL}>Останнє повідомлення</th>
               <th className={HEAD_CELL}>Статус</th>
-              <th className={cn(HEAD_CELL, 'text-right')}>Без відповіді</th>
+              <th className={cn(HEAD_CELL, 'text-right')}>{L.due}</th>
               <th className={HEAD_CELL}>Хто веде</th>
               <th className={HEAD_CELL}>Час</th>
             </tr>
@@ -164,7 +226,8 @@ export function MessengersTab() {
           <tbody ref={tbody}>
             {rows.map((r) => {
               const cp = cpById(world, r.t.counterpartyId)
-              const taker = staffById(world, r.t.takenBy?.staffId)
+              const owner = ownerOf(world, r.t)
+              const taker = staffById(world, owner?.staffId)
               const overdue = r.wait != null && r.wait > SLA_MIN
               const active = drawer?.kind === 'thread' && drawer.id === r.t.id
               const lastStaff = r.last && r.last.from !== 'client' ? staffById(world, r.last.staffId) : null
@@ -226,13 +289,24 @@ export function MessengersTab() {
                     <StatusBadge ep={r.ep} now={world.now} />
                   </td>
                   <td className={cn(CELL, 'text-right tabular-nums')}>
-                    {r.wait != null ? <span className={cn(overdue ? 'font-semibold text-danger-fg' : 'text-warning-fg')}>{fmtGap(r.wait)}</span> : <span className="text-subtle">—</span>}
+                    {r.wait == null ? (
+                      <span className="text-subtle">—</span>
+                    ) : kind === 'В' ? (
+                      <span className={cn('whitespace-nowrap', overdue ? 'font-semibold text-danger-fg' : 'text-warning-fg')} data-sla="">
+                        {overdue ? `−${fmtGap(r.wait - SLA_MIN)}` : `${fmtGap(SLA_MIN - r.wait)}`}
+                      </span>
+                    ) : (
+                      <span className={cn(overdue ? 'font-semibold text-danger-fg' : 'text-warning-fg')}>{fmtGap(r.wait)}</span>
+                    )}
                   </td>
                   <td className={CELL}>
                     {taker ? (
                       <span className="flex min-w-0 items-center gap-1.5" data-taken-by={taker.id}>
                         <Avatar name={taker.name} size={5} tone={taker.id === meId ? 'accent' : 'muted'} />
-                        <span className="truncate text-label">{taker.id === meId ? 'Я' : taker.name}</span>
+                        <span className="truncate text-label" title={owner?.responsible ? 'Відповідальний менеджер клієнта' : undefined}>
+                          {taker.id === meId ? 'Я' : taker.name}
+                          {owner?.responsible && <span className="text-muted-fg"> · відп.</span>}
+                        </span>
                       </span>
                     ) : (
                       <span className="rounded-md border border-dashed border-border-strong px-1.5 py-0.5 text-label text-muted-fg">Нічиє</span>
@@ -258,8 +332,8 @@ export function MessengersTab() {
   )
 }
 
-export function MessengersTabLabel({ world }: { world: World }) {
-  const n = waitingCount(world)
+export function MessengersTabLabel({ world, kind = 'Б' }: { world: World; kind?: PoolKind }) {
+  const n = waitingCount(world, kind)
   return (
     <>
       <Proposal />
@@ -270,18 +344,18 @@ export function MessengersTabLabel({ world }: { world: World }) {
 
 /* ─── «Пропущені»: повідомлення без відповіді понад SLA ─────────────── */
 
-export function missedMessageRows(world: World) {
-  return poolRows(world).filter((r) => r.wait != null && r.wait > SLA_MIN)
+export function missedMessageRows(world: World, kind: PoolKind = 'Б') {
+  return poolRows(world, kind).filter((r) => r.wait != null && r.wait > SLA_MIN && !managerOwned(world, r) && (kind !== 'A' || minutesBetween(r.ep.waitingSince!, world.now) <= QUIET_MIN))
 }
 
-export function MissedMessageRows() {
+export function MissedMessageRows({ kind = 'Б' }: { kind?: PoolKind }) {
   const { world } = useStore()
   const { openDrawer, go } = useNav()
   return (
     <>
-      {missedMessageRows(world).map((r) => {
+      {missedMessageRows(world, kind).map((r) => {
         const cp = cpById(world, r.t.counterpartyId)
-        const taker = staffById(world, r.t.takenBy?.staffId)
+        const taker = staffById(world, ownerOf(world, r.t)?.staffId)
         return (
           <tr key={r.t.id} onClick={() => openDrawer({ kind: 'thread', id: r.t.id })} className="cursor-pointer bg-danger-soft/30 hover:bg-danger-soft/50" data-missed-msg="" data-thread={r.t.id}>
             <td className={CELL}>

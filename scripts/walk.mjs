@@ -27,7 +27,7 @@
  *   [data-empty-chat]                    порожній стан листування
  *
  * Запуск (при `npm run dev`):
- *   node scripts/walk.mjs [--variants 0,0б] [--url …] [--json out.json] [--shots]
+ *   node scripts/walk.mjs [--variants 0,0б,А,Б,В] [--card widget|history|tabs] [--url …] [--json out.json] [--shots]
  */
 import puppeteer from 'puppeteer-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -46,8 +46,10 @@ const CHROME = argOf(
         ? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
         : '/usr/bin/google-chrome'),
 )
-const VARIANTS = argOf('--variants', '0,0б,Б').split(',')
+const VARIANTS = argOf('--variants', '0,0б,А,Б,В').split(',')
 const JSON_OUT = argOf('--json', null)
+/** Положення листування в картці (Q3): widget | history | tabs. */
+const CARD = argOf('--card', 'widget')
 const SHOTS = process.argv.includes('--shots')
 const W = 1280
 const H = 720
@@ -62,12 +64,20 @@ const pageErrors = []
 page.on('pageerror', (e) => pageErrors.push(e.message))
 
 async function open(v, scene, role = 'operator', extra = {}) {
-  const q = new URLSearchParams({ v, scene, role, lab: 'off', ...extra })
+  const q = new URLSearchParams({ v, scene, role, lab: 'off', card: CARD, ...extra })
   await page.goto(`${BASE}?${q}`, { waitUntil: 'networkidle0' })
   await sleep(150)
 }
 
 const world = () => page.evaluate(() => window.__bp.world)
+/** Картка з вкладками (Q3): листування за вкладкою «Комунікації» — клікнути її. */
+async function openComms() {
+  const tab = await page.$('[role=tab][data-walk-month]')
+  if (tab) {
+    await tab.click()
+    await sleep(150)
+  }
+}
 const has = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].some((el) => el.getClientRects().length > 0), sel)
 
 /** Позиція поля відповіді у координатах вмісту + чи видно його без прокрутки. */
@@ -173,6 +183,7 @@ async function lostList(v) {
 /** Записи сцени 3 в треді в порядку 10:12 → 12:05 → 13:40 → 15:34. */
 async function mixedDayOrder(v) {
   await open(v, 'mixed-day', 'operator', { p: 'cp:cp-koval' })
+  await openComms()
   const times = await page.evaluate(() => {
     const thread = [...document.querySelectorAll('[data-thread-item]')].map((e) => e.getAttribute('data-at')?.slice(11))
     if (thread.length) return { from: 'тред', times: thread }
@@ -192,6 +203,7 @@ async function sceneChecks(v) {
   const res = {}
   // 2: тред одразу прив'язаний до резерву.
   await open(v, 'sms-link', 'operator', { p: 'cp:cp-koval' })
+  await openComms()
   res[2] = await page.evaluate(() => document.body.innerText.includes('о 8:30'))
   // 4: у Б звернення взяте, з ім'ям А.
   await open(v, 'two-operators')
@@ -203,6 +215,7 @@ async function sceneChecks(v) {
   res[5] = hl && (await has('[data-missed-msg]'))
   // 8: Viber і Telegram — в одному компоненті треду.
   await open(v, 'two-channels', 'operator', { p: 'cp:cp-koval' })
+  await openComms()
   res[8] = await page.evaluate(() => {
     const items = [...document.querySelectorAll('[data-thread-item][data-channel]')]
     const ch = new Set(items.map((e) => e.getAttribute('data-channel')))
@@ -229,6 +242,7 @@ async function sceneChecks(v) {
   res[10] = ok10
   // 11: порожній стан листування.
   await open(v, 'empty', 'operator', { p: 'cp:cp-empty' })
+  await openComms()
   res[11] = await has('[data-empty-chat]')
   return res
 }

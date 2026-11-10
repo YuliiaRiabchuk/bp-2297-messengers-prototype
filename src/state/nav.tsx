@@ -12,7 +12,7 @@ export type Route =
   | { screen: 'mytasks' }
 
 /** `intent: 'sms'` — вікно листування відкрито з колонки «Чат з клієнтом»: SMS з AI-підказкою. */
-export type Drawer = { kind: 'call' | 'task' | 'thread'; id: string; intent?: 'sms' } | null
+export type Drawer = { kind: 'call' | 'task' | 'thread'; id: string; intent?: 'sms' | 'reply' } | null
 
 const encodeRoute = (r: Route) => (r.screen === 'calls' ? `calls:${r.tab}` : r.screen === 'cp' ? `cp:${r.id}` : 'mytasks')
 
@@ -29,7 +29,7 @@ function decodeDrawer(s: string | null): Drawer {
   if (!s) return null
   const [kind, id, intent] = s.split(':')
   if (!((kind === 'call' || kind === 'task' || kind === 'thread') && id)) return null
-  return intent === 'sms' ? { kind, id, intent } : { kind, id }
+  return intent === 'sms' || intent === 'reply' ? { kind, id, intent } : { kind, id }
 }
 
 interface Nav {
