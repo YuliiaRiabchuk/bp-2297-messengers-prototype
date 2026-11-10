@@ -2,10 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Bookmark,
-  Bot,
   ChevronDown,
   ChevronRight,
-  Clock,
   ExternalLink,
   FileText,
   Globe,
@@ -30,7 +28,7 @@ import { dayLabel, dayOf, fmtDuration, fmtGap, minutesBetween, shortDate, timeOf
 import { useLab } from '@/lab/lab-state'
 import { useNav } from '@/state/nav'
 import { useStore } from '@/state/store'
-import type { Counterparty, MsgChannel, MsgEvent, Thread as ThreadT, ThreadEvent, World } from '@/mock/types'
+import type { Counterparty, MsgChannel, MsgEvent, Summary, Thread as ThreadT, ThreadEvent, World } from '@/mock/types'
 import { canTakeOver, ownerOf } from './owner'
 import { rentGoesOn, flatEpisode, periodEpisode, episodeSummary, episodesOf, RESULT_LABEL, STATUS_LABEL, waitMin, SLA_MIN, type Episode } from './episodes'
 
@@ -196,7 +194,7 @@ export function Thread({
       {!cp && <BindBar world={world} t={t} />}
       <TakenStrip world={world} t={t} episodes={stripEpisodes} meId={meId} role={role} readOnly={readOnly} mode={mode} onTook={() => composerRef.current?.focus()} />
       {mode === 'flat' && !noMessages && (
-        <div className="shrink-0 border-b border-border bg-bg/60 px-3.5 pt-2.5">
+        <div className="shrink-0 border-b border-border px-3.5 pt-2">
           <PeriodSummary world={world} t={t} />
         </div>
       )}
@@ -459,13 +457,11 @@ function PeriodSummary({ world, t }: { world: World; t: ThreadT }) {
   // Зведення за місяць у ЮЛ — AI-зведення з моків, решта — за правилом.
   const s = episodeSummary(ep, days === 30 ? t.summary : undefined)
   return (
-    <section className="mb-2.5 max-h-40 overflow-y-auto rounded-lg border border-border bg-card px-3 py-2" data-answer-month={days === 30 ? '' : undefined}>
-      <div className="mb-1 flex flex-wrap items-center gap-1.5">
-        <span className="flex items-center gap-1 text-mono font-semibold uppercase tracking-wider text-violet-fg">
-          <Sparkles className="size-3" aria-hidden /> AI-зведення
-        </span>
-        <Proposal />
-        <span className="ml-auto flex gap-0.5" role="radiogroup" aria-label="Період зведення">
+    <section className="mb-2" data-answer-month={days === 30 ? '' : undefined}>
+      <SummaryLine
+        s={s}
+        trailing={
+        <span className="flex shrink-0 gap-0.5" role="radiogroup" aria-label="Період зведення">
           {PERIODS.map((p) => (
             <button
               key={p.label}
@@ -480,17 +476,8 @@ function PeriodSummary({ world, t }: { world: World; t: ThreadT }) {
             </button>
           ))}
         </span>
-      </div>
-      <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-label [overflow-wrap:anywhere]">
-        <dt className="text-muted-fg">Просив</dt>
-        <dd className="text-fg">{s.asked}</dd>
-        <dt className="text-muted-fg">Дали</dt>
-        <dd className="text-fg">{s.given}</dd>
-        <dt className="text-muted-fg">Домовились</dt>
-        <dd className="text-fg">{s.agreed}</dd>
-        <dt className="text-muted-fg">Далі</dt>
-        <dd className="font-medium text-fg">{s.next}</dd>
-      </dl>
+        }
+      />
     </section>
   )
 }
@@ -556,6 +543,37 @@ function EmptyChat({ hasCalls }: { hasCalls: boolean }) {
 
 const PAGE = 80
 
+/**
+ * AI-зведення одним рядком: «Далі» — те, що оператору треба зараз. Просив /
+ * Дали / Домовились — за кліком: це довідка, а не те, що читають щоразу.
+ */
+function SummaryLine({ s, trailing }: { s: Summary; trailing?: React.ReactNode }) {
+  const [more, setMore] = useState(false)
+  return (
+    <div className="mt-1.5 text-label [overflow-wrap:anywhere]">
+      <div className="flex items-center gap-1.5">
+        <button type="button" onClick={() => setMore((v) => !v)} aria-expanded={more} className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-0.5 text-left hover:text-fg" title="AI-зведення: що просив, що дали, про що домовились">
+          <Sparkles className="size-3 shrink-0 text-violet-fg" aria-hidden />
+          <span className="text-muted-fg">Далі:</span>
+          <span className="min-w-0 truncate font-medium text-fg">{s.next}</span>
+          {more ? <ChevronDown className="size-3 shrink-0 text-muted-fg" aria-hidden /> : <ChevronRight className="size-3 shrink-0 text-muted-fg" aria-hidden />}
+        </button>
+        {trailing}
+      </div>
+      {more && (
+        <dl className="mt-1 grid grid-cols-[84px_minmax(0,1fr)] gap-x-2 gap-y-0.5 pl-[18px]">
+          <dt className="text-muted-fg">Просив</dt>
+          <dd className="text-fg">{s.asked}</dd>
+          <dt className="text-muted-fg">Дали</dt>
+          <dd className="text-fg">{s.given}</dd>
+          <dt className="text-muted-fg">Домовились</dt>
+          <dd className="text-fg">{s.agreed}</dd>
+        </dl>
+      )}
+    </div>
+  )
+}
+
 function EpisodeBlock({ world, ep, last, cp, t }: { world: World; ep: Episode; last: boolean; cp: Counterparty | null; t: ThreadT }) {
   const [open, setOpen] = useState(last)
   const s = episodeSummary(ep, last && ep.index === 0 ? t.summary : undefined, world.now)
@@ -579,28 +597,14 @@ function EpisodeBlock({ world, ep, last, cp, t }: { world: World; ep: Episode; l
             <StatusBadge ep={ep} now={world.now} />
           </span>
         </span>
-        <span className={cn('grid min-w-0 gap-x-2 gap-y-0.5 text-label [overflow-wrap:anywhere]', open ? 'grid-cols-[88px_minmax(0,1fr)]' : 'grid-cols-1')}>
-          {open ? (
-            <>
-              <span className="col-span-2 mb-0.5 flex items-center gap-1 text-mono font-semibold uppercase tracking-wider text-violet-fg">
-                <Sparkles className="size-3" aria-hidden /> AI-зведення <Proposal className="ml-1" />
-              </span>
-              <span className="text-muted-fg">Просив</span>
-              <span className="text-fg">{s.asked}</span>
-              <span className="text-muted-fg">Дали</span>
-              <span className="text-fg">{s.given}</span>
-              <span className="text-muted-fg">Домовились</span>
-              <span className="text-fg">{s.agreed}</span>
-              <span className="text-muted-fg">Далі</span>
-              <span className="font-medium text-fg">{s.next}</span>
-            </>
-          ) : (
-            <span className="line-clamp-1 text-muted-fg">
-              {s.asked} → <span className="text-fg-2">{s.agreed === '—' ? s.next : s.agreed}</span>
-            </span>
-          )}
-        </span>
+        {!open && (
+          <span className="line-clamp-1 text-label text-muted-fg [overflow-wrap:anywhere]">
+            {s.asked !== '—' && <>{s.asked} → </>}
+            <span className="text-fg-2">{s.agreed === '—' ? s.next : s.agreed}</span>
+          </span>
+        )}
       </button>
+      {open && <SummaryLine s={s} />}
       {open && <EventList world={world} events={ep.events} cp={cp} t={t} />}
     </section>
   )
@@ -620,9 +624,12 @@ function EventList({ world, events, cp, t }: { world: World; events: ThreadEvent
           {shown.map((e, i) => {
             const prev = shown[i - 1]
             const newDay = !prev || dayOf(prev.at) !== dayOf(e.at)
-            const pause = prev && !newDay ? minutesBetween(prev.at, e.at) : 0
+            // Підпис над бульбашкою — тільки коли змінився автор чи канал: підряд
+            // від одного й того ж «хто · де» не повторюємо.
+            const same =
+              !newDay && prev?.kind === 'msg' && e.kind === 'msg' && prev.from === e.from && prev.staffId === e.staffId && prev.channel === e.channel
             return (
-              <div key={e.id} className="flex flex-col gap-2">
+              <div key={e.id} className={cn('flex flex-col', same ? 'gap-0.5 -mt-1' : 'gap-2')}>
                 {newDay && (
                   <div className="flex items-center gap-2 text-mono font-semibold uppercase tracking-wider text-muted-fg">
                     <span className="h-px flex-1 bg-border" />
@@ -630,12 +637,7 @@ function EventList({ world, events, cp, t }: { world: World; events: ThreadEvent
                     <span className="h-px flex-1 bg-border" />
                   </div>
                 )}
-                {pause >= 30 && (
-                  <div className="flex items-center justify-center gap-1 text-label text-muted-fg">
-                    <Clock className="size-3" aria-hidden /> пауза {fmtGap(pause)}
-                  </div>
-                )}
-                <Item world={world} e={e} cp={cp} t={t} />
+                <Item world={world} e={e} cp={cp} t={t} showHead={!same} />
               </div>
             )
           })}
@@ -653,46 +655,41 @@ function OccasionChip({ code, kind }: { code: string; kind: 'reserve' | 'rent' }
   )
 }
 
-function Item({ world, e, cp, t }: { world: World; e: ThreadEvent; cp: Counterparty | null; t: ThreadT }) {
+function Item({ world, e, showHead = true }: { world: World; e: ThreadEvent; cp: Counterparty | null; t: ThreadT; showHead?: boolean }) {
   const base = { 'data-thread-item': '', 'data-at': e.at }
   if (e.kind === 'system')
     return (
       <div {...base} data-channel="system" className="flex items-center justify-center gap-1.5 px-6 text-center text-label text-muted-fg">
         <Link2 className="size-3 shrink-0" aria-hidden />
-        <span>
-          {e.text} · {timeOf(e.at)}
-        </span>
+        <span>{e.text}</span>
       </div>
     )
   if (e.kind === 'call') return <CallItem world={world} e={e} base={base} />
   if (e.channel === 'sms' || e.channel === 'viber-notify') return <OutgoingNotice world={world} e={e} base={base} />
   const fromClient = e.from === 'client'
   const staff = staffById(world, e.staffId)
-  const who = fromClient ? (cp?.name.split(' ').slice(0, 2).join(' ') ?? t.handle?.name ?? 'Клієнт') : e.from === 'bot' ? 'Софія · бот' : staff?.name ?? 'Співробітник'
+  // Клієнт — ліворуч, ми — праворуч: сторона вже каже, хто пише. Імʼя — тільки наше
+  // (хто з колег відповідав), канал — бо тред один на всі канали (§3).
+  const who = fromClient ? null : e.from === 'bot' ? 'Софія · бот' : staff?.name.split(' ')[0] ?? 'Співробітник'
   return (
-    <div {...base} data-channel={e.channel} className={cn('flex items-end gap-2', fromClient ? 'justify-start' : 'justify-end')}>
-      {fromClient && <CounterpartyAvatar cp={cp} size={6} />}
+    <div {...base} data-channel={e.channel} className={cn('flex', fromClient ? 'justify-start' : 'justify-end')}>
       <div className={cn('flex min-w-0 max-w-[82%] flex-col', fromClient ? 'items-start' : 'items-end')}>
-        <span className="mb-0.5 flex items-center gap-1.5 text-label text-muted-fg">
-          {who}
-          <ChannelGlyph channel={e.channel} label />
-          <span className="tabular-nums">{timeOf(e.at)}</span>
-        </span>
+        {showHead && (
+          <span className="mb-0.5 flex items-center gap-1 px-1 text-label text-muted-fg">
+            {who && <span>{who} ·</span>}
+            <ChannelGlyph channel={e.channel} label />
+          </span>
+        )}
         <div
           className={cn(
             'max-w-full whitespace-pre-wrap rounded-xl px-3 py-1.5 text-body text-fg [overflow-wrap:anywhere]',
-            fromClient ? 'rounded-bl-sm bg-card ring-1 ring-border' : e.from === 'bot' ? 'rounded-br-sm bg-violet-soft' : 'rounded-br-sm bg-accent-soft',
+            fromClient ? 'bg-card ring-1 ring-border' : e.from === 'bot' ? 'bg-violet-soft' : 'bg-accent-soft',
           )}
         >
           {e.text}
+          <span className="float-right ml-2 mt-1 text-mono leading-none tabular-nums text-muted-fg">{timeOf(e.at)}</span>
         </div>
       </div>
-      {e.from === 'staff' && <Avatar name={staff?.name} size={6} tone="accent" />}
-      {e.from === 'bot' && (
-        <Avatar tone="violet" size={6}>
-          <Bot />
-        </Avatar>
-      )}
     </div>
   )
 }
@@ -736,15 +733,14 @@ function OutgoingNotice({ world, e, base }: { world: World; e: MsgEvent; base: o
     window.setTimeout(() => dispatch({ type: 'DELIVER', threadId: thread.id, eventId: id, delivery: 'delivered' }), 1600)
   }
   return (
-    <div {...base} data-channel={e.channel} className="ml-auto flex w-[82%] flex-col items-end">
-      <span className="mb-0.5 flex items-center gap-1.5 text-label text-muted-fg">
-        {staff?.name ?? 'Система'}
+    <div {...base} data-channel={e.channel} className="ml-auto flex max-w-[82%] flex-col items-end">
+      <span className="mb-0.5 flex items-center gap-1 px-1 text-label text-muted-fg" title={e.template ? `Шаблон «${e.template}» · ${staff?.name ?? 'система'}` : staff?.name ?? 'система'}>
         <ChannelGlyph channel={e.channel} label />
-        {e.template && <span>· шаблон «{e.template}»</span>}
-        <span className="tabular-nums">{timeOf(e.at)}</span>
       </span>
-      <div className={cn('w-full rounded-xl rounded-br-sm border border-dashed px-3 py-1.5 text-body text-fg [overflow-wrap:anywhere]', e.delivery === 'failed' ? 'border-danger/40 bg-danger-soft/40' : 'border-border-strong bg-card')}>
+      {/* Пунктир — одностороннє повідомлення: відповісти на нього клієнт не може. */}
+      <div className={cn('max-w-full rounded-xl border border-dashed px-3 py-1.5 text-body text-fg [overflow-wrap:anywhere]', e.delivery === 'failed' ? 'border-danger/40 bg-danger-soft/40' : 'border-border-strong bg-card')}>
         {e.text}
+        <span className="float-right ml-2 mt-1 text-mono leading-none tabular-nums text-muted-fg">{timeOf(e.at)}</span>
       </div>
       <span className="mt-1 flex items-center gap-1.5 text-label text-muted-fg">
         {d && (
@@ -752,7 +748,6 @@ function OutgoingNotice({ world, e, base }: { world: World; e: MsgEvent; base: o
             {d.label}
           </Badge>
         )}
-        {e.delivery === 'failed' ? 'Клієнт не отримав.' : 'Одностороннє: відповісти на нього клієнт не може.'}
         {e.delivery === 'failed' && role !== 'head' && (
           <button type="button" onClick={resend} className="rounded-md border border-border bg-card px-1.5 py-0.5 font-medium text-fg-2 hover:bg-muted" data-resend="">
             Надіслати ще раз
@@ -810,6 +805,13 @@ function Composer({
         : `Звернення веде ${staffById(world, owner!.staffId)?.name}. Відповідати може тільки той, хто взяв.`
       : null
   const reasonLine = disabledReason && (takeOverHint ? `${disabledReason} Клієнт чекає задовго — можна перехопити.` : disabledReason)
+
+  if (isHead)
+    return (
+      <div className="shrink-0 border-t border-border px-4 py-2.5 text-label text-fg-2" data-no-reply="">
+        Керівник читає листування; відповідає оператор або менеджер.
+      </div>
+    )
 
   if (!options.length || !channel)
     return (

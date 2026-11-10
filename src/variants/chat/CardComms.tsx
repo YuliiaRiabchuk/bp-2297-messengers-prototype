@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Clock, MessagesSquare, Sparkles } from 'lucide-react'
+import { Clock, MessagesSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SectionCard } from '@/components/crm'
 import { Proposal } from '@/components/proposal'
@@ -137,12 +137,6 @@ function MonthAside({ world, thread, episodes, focus, onPick }: { world: World; 
               <StatusBadge ep={cur} now={world.now} />
             </div>
             {next && <p className="text-body font-medium text-fg">{next}</p>}
-            {thread.summary && episodes.length > 1 && (
-              <p className="mt-1 flex gap-1 text-label text-fg-2">
-                <Sparkles className="mt-0.5 size-3 shrink-0 text-violet-fg" aria-hidden />
-                {thread.summary.agreed}
-              </p>
-            )}
           </>
         )}
         <div className="mb-1.5 mt-3 text-mono font-semibold uppercase tracking-wider text-muted-fg">За 30 днів</div>
