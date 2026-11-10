@@ -29,17 +29,22 @@ export interface CardSlots {
    * окремою вкладкою.
    */
   comms?: (cp: Counterparty, t: Thread | null, layout: CardLayout) => ReactNode
+  /** Варіант сам задає положення (Г — завжди окрема вкладка), перемикач «Кадрів» не діє. */
+  forceLayout?: CardLayout
   fullAfterOps?: (cp: Counterparty, t: Thread | null) => ReactNode
   leftTop?: (cp: Counterparty, t: Thread | null) => ReactNode
   /** Сховати прод-«Історію» (варіант заміняє її своєю). */
   hideHistory?: boolean
   historyExtra?: (t: Thread) => HistoryLine[]
+  /** Комунікація живе на своїй вкладці — в «Історії» лишаються тільки операції (Г). */
+  historyOpsOnly?: boolean
 }
 
 export function CounterpartyPage({ id, slots = {} }: { id: string; slots?: CardSlots }) {
   const { world } = useStore()
   const { go } = useNav()
-  const { card: layout } = useLab()
+  const { card: labLayout } = useLab()
+  const layout = slots.forceLayout ?? labLayout
   const [tab, setTab] = useState<'card' | 'comms'>('card')
   const cp = cpById(world, id)
   if (!cp) return <WidgetEmpty>Контрагента не знайдено.</WidgetEmpty>
@@ -110,7 +115,7 @@ export function CounterpartyPage({ id, slots = {} }: { id: string; slots?: CardS
           <div className="grid grid-cols-[1.5fr_1fr] gap-3.5">
             <div className="flex min-w-0 flex-col gap-3.5">
               {slots.leftTop?.(cp, thread)}
-              {comms && layout === 'history' ? comms(cp, thread, 'history') : !slots.hideHistory && <HistoryWidget world={world} thread={thread} extra={slots.historyExtra} />}
+              {comms && layout === 'history' ? comms(cp, thread, 'history') : !slots.hideHistory && <HistoryWidget world={world} thread={thread} extra={slots.historyExtra} opsOnly={slots.historyOpsOnly} />}
             </div>
             <div className="flex min-w-0 flex-col gap-3.5">
               <TasksWidget world={world} cp={cp} />
@@ -309,7 +314,7 @@ export function prodHistoryLines(world: World, t: Thread): HistoryLine[] {
   return lines
 }
 
-function HistoryWidget({ world, thread, extra }: { world: World; thread: Thread | null; extra?: (t: Thread) => HistoryLine[] }) {
+function HistoryWidget({ world, thread, extra, opsOnly }: { world: World; thread: Thread | null; extra?: (t: Thread) => HistoryLine[]; opsOnly?: boolean }) {
   const [all, setAll] = useState(false)
   if (!thread)
     return (
@@ -317,7 +322,8 @@ function HistoryWidget({ world, thread, extra }: { world: World; thread: Thread 
         <WidgetEmpty>Подій ще немає</WidgetEmpty>
       </SectionCard>
     )
-  const lines = [...prodHistoryLines(world, thread), ...(extra?.(thread) ?? [])].sort((a, b) => b.at.localeCompare(a.at))
+  const commIds = new Set(thread.events.filter((e) => e.kind !== 'system').map((e) => e.id))
+  const lines = [...prodHistoryLines(world, thread).filter((l) => !opsOnly || !commIds.has(l.key)), ...(extra?.(thread) ?? [])].sort((a, b) => b.at.localeCompare(a.at))
   const shown = all ? lines : lines.slice(0, 30)
   return (
     <SectionCard icon={<Clock />} title="Історія" count={lines.length} cap="max-h-[28rem]" data-testid="history-widget">

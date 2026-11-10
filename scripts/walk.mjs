@@ -263,8 +263,9 @@ async function layoutChecks(v) {
     }
   }
   // Точки входу, де листування може жити поза сценою за замовчуванням.
-  for (const p of ['calls:all', 'calls:messengers', 'mytasks', 'cp:cp-koval']) {
-    await open(v, 'mixed-day', 'operator', { p })
+  for (const extra of [{ p: 'calls:all' }, { p: 'calls:messengers' }, { p: 'calls:messengers', d: 'thread:th-koval' }, { p: 'mytasks' }, { p: 'cp:cp-koval' }]) {
+    await open(v, 'mixed-day', 'operator', extra)
+    if (extra.p.startsWith('cp:')) await openComms()
     for (const c of await chatComponents()) comps.add(c)
   }
   return { hscroll: bad, replyHidden, components: [...comps] }

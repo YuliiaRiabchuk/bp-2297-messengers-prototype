@@ -26,7 +26,7 @@ function ThreadDrawer({ kind, id, intent }: { kind: CommsKind; id: string; inten
   return <Thread key={`${id}:${intent ?? ''}`} threadId={id} host="drawer" intent={intent} mode={THREAD_MODE[kind]} onClose={() => openDrawer(null)} />
 }
 
-function TaskDrawerWithThread({ id }: { id: string }) {
+export function TaskDrawerWithThread({ id }: { id: string }) {
   const { world } = useStore()
   const { openDrawer } = useNav()
   const task = world.tasks.find((t) => t.id === id)

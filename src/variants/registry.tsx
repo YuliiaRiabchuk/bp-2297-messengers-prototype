@@ -8,6 +8,7 @@ import type { CardSlots } from '@/screens/cp/CounterpartyPage'
 import { SevaChatsWidget, sevaHistoryLines } from './v0b/SevaChats'
 import type { Counterparty, Thread } from '@/mock/types'
 import { chatVariant } from './chat-variants'
+import { VARIANT_G } from './simple'
 
 /**
  * Реалізація варіанта: що він додає до прод-екранів і куди веде точка входу
@@ -51,6 +52,7 @@ export const IMPLS: Record<string, VariantImpl> = {
   'А': chatVariant('A'),
   'Б': chatVariant('Б'),
   'В': chatVariant('В'),
+  'Г': VARIANT_G,
 }
 
 /** Історія з діалогами Севи потребує світу — віддаємо фабрику. */
