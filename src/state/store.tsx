@@ -22,7 +22,9 @@ function reducer(w: World, a: Action): World {
   const patch = (id: string, f: (t: Thread) => Thread) => ({ ...w, threads: w.threads.map((t) => (t.id === id ? f(t) : t)) })
   switch (a.type) {
     case 'TAKE':
-      return patch(a.threadId, (t) => (t.takenBy ? t : { ...t, takenBy: { staffId: a.staffId, at: w.now } }))
+      // Хто перший узяв — правило інтерфейсу («Взяти» лише в нічийого, «Перехопити» — після SLA);
+      // стор приймає нового виконавця, якщо це не той самий.
+      return patch(a.threadId, (t) => (t.takenBy?.staffId === a.staffId ? t : { ...t, takenBy: { staffId: a.staffId, at: w.now } }))
     case 'SEND':
       return patch(a.threadId, (t) => ({
         ...t,

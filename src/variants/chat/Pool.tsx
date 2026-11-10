@@ -14,7 +14,7 @@ import { useStore } from '@/state/store'
 import type { MsgEvent, Thread, World } from '@/mock/types'
 import { ChannelGlyph, StatusBadge } from './Thread'
 import { episodesOf, flatEpisode, periodEpisode, SLA_MIN, waitMin, type Episode } from './episodes'
-import { ownerOf } from './owner'
+import { ESCALATE_MIN, ownerOf } from './owner'
 
 /**
  * Вкладка «Месенджери» (пропозиція). Хто перший взяв, той веде (§3);
@@ -51,8 +51,8 @@ export function poolRows(world: World, kind: PoolKind = 'Б'): PoolRow[] {
 
 /**
  * Втрачені (сцена 7). Б і В: звернення, закриті без результату, одне на
- * клієнта. А закритих не знає — замінник: клієнт мовчить понад 72 год, і за
- * місяць не з'явилось ні резерву, ні оренди.
+ * клієнта. А закритих не знає — замінник: у треді понад 72 год без руху (хто
+ * б не мовчав — клієнт чи ми), і за місяць не з'явилось ні резерву, ні оренди.
  */
 function lostRows(world: World, kind: PoolKind = 'Б'): PoolRow[] {
   const rows: PoolRow[] = []
@@ -73,11 +73,12 @@ function lostRows(world: World, kind: PoolKind = 'Б'): PoolRow[] {
 
 const RANK = { waiting_us: 0, open: 1, waiting_client: 2, closed: 3 }
 
-/** Клієнти з відповідальним менеджером — його черга, не операторська (Q6). */
+/** Клієнти з відповідальним менеджером — його черга, доки він не мовчить понад годину (Q6). */
 const managerOwned = (world: World, r: PoolRow) => !!ownerOf(world, r.t)?.responsible
 
 export function waitingCount(world: World, kind: PoolKind = 'Б') {
-  return poolRows(world, kind).filter((r) => r.ep.status === 'waiting_us' && !managerOwned(world, r)).length
+  // Число на вкладці — те саме, що на фільтрі «Чекають відповіді»: двох лічильників одного факту не буває.
+  return poolRows(world, kind).filter((r) => r.ep.status === 'waiting_us').length
 }
 
 const isOpen = (r: PoolRow, kind: PoolKind, now: string) =>
@@ -85,7 +86,7 @@ const isOpen = (r: PoolRow, kind: PoolKind, now: string) =>
 const isWaiting = (r: PoolRow, kind: PoolKind) => (kind === 'В' ? r.wait != null && r.wait > SLA_MIN : r.ep.status === 'waiting_us')
 
 const LABELS: Record<PoolKind, { open: string; waiting: string; lost: string; due: string }> = {
-  A: { open: 'Активні', waiting: 'Без відповіді', lost: 'Мовчать понад 72 год', due: 'Без відповіді' },
+  A: { open: 'Активні', waiting: 'Без відповіді', lost: 'Без руху понад 72 год', due: 'Без відповіді' },
   Б: { open: 'Відкриті', waiting: 'Чекають відповіді', lost: 'Закриті без результату', due: 'Без відповіді' },
   В: { open: 'Черга', waiting: 'Прострочені SLA', lost: 'Закриті без результату', due: 'Дедлайн' },
 }
@@ -98,6 +99,9 @@ export function MessengersTab({ kind = 'Б' }: { kind?: PoolKind }) {
   const [filter, setFilter] = useState<Filter>('open')
   const tbody = useRef<HTMLTableSectionElement>(null)
   const L = LABELS[kind]
+  // Відкритий дровер стискає пул до ~600 px: ховаємо текст і статус (вони є у вікні),
+  // лишаємо те, за чим оператор обирає наступного, — таймер і «хто веде».
+  const narrow = drawer != null
 
   const all = useMemo(() => poolRows(world, kind), [world, kind])
   const rows = useMemo(() => {
@@ -148,6 +152,7 @@ export function MessengersTab({ kind = 'Б' }: { kind?: PoolKind }) {
     if (kind !== 'В') return
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
+      if (drawer?.kind === 'thread') return
       if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyN') {
         e.preventDefault()
         takeNext()
@@ -165,7 +170,20 @@ export function MessengersTab({ kind = 'Б' }: { kind?: PoolKind }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="messengers">
-      <Toolbar placeholder="Пошук по клієнту чи тексту" />
+      <Toolbar placeholder="Пошук по клієнту чи тексту">
+        {kind === 'В' && role !== 'head' && (
+          <button
+            type="button"
+            onClick={takeNext}
+            disabled={!nextRow}
+            data-next=""
+            className="ml-auto inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-md bg-fg px-3 text-body font-semibold text-primary-fg hover:bg-fg-2 disabled:cursor-not-allowed disabled:opacity-40"
+            title={nextRow ? `Взяти найтерміновіше нічиє звернення (N): ${cpById(world, nextRow.t.counterpartyId)?.name ?? nextRow.t.handle?.name ?? 'клієнт'}` : 'Нічиїх звернень, що чекають, немає'}
+          >
+            Наступне <kbd className="rounded-sm bg-white/15 px-1 font-mono text-mono">N</kbd>
+          </button>
+        )}
+      </Toolbar>
       <div className="-mt-1 flex shrink-0 flex-wrap items-center gap-1 px-4 pb-2.5" role="tablist" aria-label="Звернення">
           {chips
             .filter((c) => !c.hidden)
@@ -188,36 +206,24 @@ export function MessengersTab({ kind = 'Б' }: { kind?: PoolKind }) {
                 )}
               </button>
             ))}
-          {kind === 'В' && role !== 'head' && (
-            <button
-              type="button"
-              onClick={takeNext}
-              disabled={!nextRow}
-              data-next=""
-              className="ml-auto inline-flex h-[30px] items-center gap-1.5 rounded-md bg-fg px-3 text-body font-semibold text-primary-fg hover:bg-fg-2 disabled:cursor-not-allowed disabled:opacity-40"
-              title="Взяти найтерміновіше нічиє звернення (N)"
-            >
-              Наступне <kbd className="rounded-sm bg-white/15 px-1 font-mono text-mono">N</kbd>
-            </button>
-          )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto" data-lost-list={filter === 'lost' ? '' : undefined}>
-        <table className={cn('w-full min-w-[860px] table-fixed border-separate border-spacing-0', FULL_BLEED)}>
+        <table className={cn('w-full table-fixed border-separate border-spacing-0', narrow ? 'min-w-0' : 'min-w-[860px]', FULL_BLEED)}>
           <colgroup>
             <col style={{ width: 64 }} />
-            <col style={{ width: 220 }} />
-            <col />
-            <col style={{ width: 168 }} />
-            <col style={{ width: 104 }} />
-            <col style={{ width: 150 }} />
-            <col style={{ width: 84 }} />
+            <col style={{ width: narrow ? undefined : 220 }} />
+            {!narrow && <col />}
+            {!narrow && <col style={{ width: 168 }} />}
+            <col style={{ width: narrow ? 120 : 124 }} />
+            <col style={{ width: narrow ? 136 : 150 }} />
+            <col style={{ width: 92 }} />
           </colgroup>
           <thead>
             <tr>
               <th className={HEAD_CELL}>Канал</th>
               <th className={HEAD_CELL}>Контрагент</th>
-              <th className={HEAD_CELL}>Останнє повідомлення</th>
-              <th className={HEAD_CELL}>Статус</th>
+              {!narrow && <th className={HEAD_CELL}>Останнє повідомлення</th>}
+              {!narrow && <th className={HEAD_CELL}>Статус</th>}
               <th className={cn(HEAD_CELL, 'text-right')}>{L.due}</th>
               <th className={HEAD_CELL}>Хто веде</th>
               <th className={HEAD_CELL}>Час</th>
@@ -276,7 +282,7 @@ export function MessengersTab({ kind = 'Б' }: { kind?: PoolKind }) {
                       </div>
                     )}
                   </td>
-                  <td className={CELL}>
+                  {!narrow && <td className={CELL}>
                     <span className="flex min-w-0 items-center gap-1.5">
                       {r.ep.occasion && <Badge variant="outline">{r.ep.occasion.code}</Badge>}
                       <span className="truncate">
@@ -284,16 +290,20 @@ export function MessengersTab({ kind = 'Б' }: { kind?: PoolKind }) {
                         {r.last?.text}
                       </span>
                     </span>
-                  </td>
-                  <td className={CELL}>
+                  </td>}
+                  {!narrow && <td className={CELL}>
                     <StatusBadge ep={r.ep} now={world.now} />
-                  </td>
+                  </td>}
                   <td className={cn(CELL, 'text-right tabular-nums')}>
                     {r.wait == null ? (
-                      <span className="text-subtle">—</span>
+                      <span className="text-muted-fg">—</span>
                     ) : kind === 'В' ? (
-                      <span className={cn('whitespace-nowrap', overdue ? 'font-semibold text-danger-fg' : 'text-warning-fg')} data-sla="">
-                        {overdue ? `−${fmtGap(r.wait - SLA_MIN)}` : `${fmtGap(SLA_MIN - r.wait)}`}
+                      <span
+                        className={cn('whitespace-nowrap', overdue ? 'font-semibold text-danger-fg' : 'text-warning-fg')}
+                        data-sla=""
+                        title={overdue ? `прострочено на ${fmtGap(r.wait - SLA_MIN)}` : `через ${fmtGap(SLA_MIN - r.wait)}`}
+                      >
+                        {narrow ? (overdue ? `−${fmtGap(r.wait - SLA_MIN)}` : fmtGap(SLA_MIN - r.wait)) : overdue ? `прострочено на ${fmtGap(r.wait - SLA_MIN)}` : `через ${fmtGap(SLA_MIN - r.wait)}`}
                       </span>
                     ) : (
                       <span className={cn(overdue ? 'font-semibold text-danger-fg' : 'text-warning-fg')}>{fmtGap(r.wait)}</span>
@@ -345,7 +355,12 @@ export function MessengersTabLabel({ world, kind = 'Б' }: { world: World; kind?
 /* ─── «Пропущені»: повідомлення без відповіді понад SLA ─────────────── */
 
 export function missedMessageRows(world: World, kind: PoolKind = 'Б') {
-  return poolRows(world, kind).filter((r) => r.wait != null && r.wait > SLA_MIN && !managerOwned(world, r) && (kind !== 'A' || minutesBetween(r.ep.waitingSince!, world.now) <= QUIET_MIN))
+  return poolRows(world, kind).filter(
+    (r) =>
+      r.wait != null &&
+      r.wait > (managerOwned(world, r) ? ESCALATE_MIN : SLA_MIN) &&
+      (kind !== 'A' || minutesBetween(r.ep.waitingSince!, world.now) <= QUIET_MIN),
+  )
 }
 
 export function MissedMessageRows({ kind = 'Б' }: { kind?: PoolKind }) {
@@ -366,7 +381,7 @@ export function MissedMessageRows({ kind = 'Б' }: { kind?: PoolKind }) {
             </td>
             <td className={CELL}>
               <span className="flex flex-wrap items-center gap-1">
-                <Badge variant="danger">Без відповіді</Badge>
+                <Badge variant="danger">{managerOwned(world, r) ? 'Менеджер не відповів' : 'Без відповіді'}</Badge>
                 <Proposal />
               </span>
             </td>
@@ -425,11 +440,12 @@ export function ChatCell({ r }: { r: CallRow }) {
       {last ? (
         <>
           <ChannelGlyph channel={last.channel} />
+          {last.from === 'client' && <span className="size-1.5 shrink-0 rounded-full bg-danger" title="Клієнт чекає відповіді" aria-label="Клієнт чекає відповіді" />}
           <span className="min-w-0 flex-1 truncate text-label text-fg-2">{last.text}</span>
           {ago != null && ago < 24 * 60 && <span className="shrink-0 text-mono text-muted-fg">{timeOf(last.at)}</span>}
         </>
       ) : (
-        <span className="text-label font-medium text-accent-fg group-hover:underline">Написати</span>
+        <span className="text-label font-medium text-accent-fg group-hover:underline">{t.counterpartyId && cpById(world, t.counterpartyId)?.phone ? 'Написати SMS' : 'Написати'}</span>
       )}
     </button>
   )

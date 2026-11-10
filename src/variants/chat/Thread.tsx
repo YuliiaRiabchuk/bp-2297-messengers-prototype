@@ -31,8 +31,8 @@ import { useLab } from '@/lab/lab-state'
 import { useNav } from '@/state/nav'
 import { useStore } from '@/state/store'
 import type { Counterparty, MsgChannel, MsgEvent, Thread as ThreadT, ThreadEvent, World } from '@/mock/types'
-import { ownerOf } from './owner'
-import { flatEpisode, periodEpisode, episodeSummary, episodesOf, RESULT_LABEL, STATUS_LABEL, waitMin, SLA_MIN, type Episode } from './episodes'
+import { canTakeOver, ownerOf } from './owner'
+import { rentGoesOn, flatEpisode, periodEpisode, episodeSummary, episodesOf, RESULT_LABEL, STATUS_LABEL, waitMin, SLA_MIN, type Episode } from './episodes'
 
 /**
  * ВІКНО ЛИСТУВАННЯ — один компонент на всі чотири точки входу (§4 брифу,
@@ -97,6 +97,9 @@ function sharedPhone(t: ThreadT) {
   return null
 }
 
+/** Чернетки відповідей за тредом — на час сесії прототипу. */
+const DRAFTS = new Map<string, string>()
+
 export function Thread({
   threadId,
   host,
@@ -133,20 +136,25 @@ export function Thread({
   const recentFrom = episodes.findIndex((ep) => minutesBetween(ep.end, world.now) <= 30 * 24 * 60)
   const firstShown = showOld ? 0 : recentFrom === -1 ? Math.max(0, episodes.length - 1) : recentFrom
 
-  // Т — взяти звернення й одразу писати (сцени 1 і 5 клавіатурою).
+  // T — взяти звернення й одразу писати (сцени 1 і 5 клавіатурою). Фізична
+  // клавіша T на будь-якій розкладці; на кнопці підписана латиницею, бо на
+  // українській розкладці там «Е», а кирилична «Т» — це N («Наступне» у В).
+  // Esc у полі спершу лише знімає фокус: чернетка не губиться.
   useEffect(() => {
     if (host !== 'drawer') return
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
       if (e.key === 'Escape') {
-        onClose?.()
+        if (typing) (e.target as HTMLElement).blur()
+        else onClose?.()
         return
       }
       if (typing || e.ctrlKey || e.metaKey || e.altKey) return
       if (e.code === 'KeyT' && t) {
         e.preventDefault()
         const owner = ownerOf(world, t)
-        if (role !== 'head' && (!owner || owner.staffId === meId)) {
+        const cur = (mode === 'flat' ? [flatEpisode(t, world.now)] : episodesOf(t, world.now)).slice(-1)[0] ?? null
+        if (role !== 'head' && (!owner || owner.staffId === meId || canTakeOver(owner, meId, waitMin(cur, world.now), SLA_MIN))) {
           dispatch({ type: 'TAKE', threadId: t.id, staffId: meId })
           requestAnimationFrame(() => composerRef.current?.focus())
         }
@@ -154,7 +162,7 @@ export function Thread({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [host, t, role, meId, dispatch, onClose, world])
+  }, [host, t, role, meId, dispatch, onClose, world, mode])
 
   // «Наступне» у В відкриває вікно одразу для відповіді.
   useEffect(() => {
@@ -186,7 +194,7 @@ export function Thread({
     <div className="flex h-full min-h-0 flex-col" data-chat-component="thread" data-thread-host={host} data-testid="thread">
       {host === 'drawer' && <ThreadHeader world={world} t={t} cp={cp} onClose={onClose} />}
       {!cp && <BindBar world={world} t={t} />}
-      <TakenStrip world={world} t={t} episodes={stripEpisodes} meId={meId} role={role} readOnly={readOnly} onTook={() => composerRef.current?.focus()} />
+      <TakenStrip world={world} t={t} episodes={stripEpisodes} meId={meId} role={role} readOnly={readOnly} mode={mode} onTook={() => composerRef.current?.focus()} />
       {mode === 'flat' && !noMessages && (
         <div className="shrink-0 border-b border-border bg-bg/60 px-3.5 pt-2.5">
           <PeriodSummary world={world} t={t} />
@@ -200,9 +208,10 @@ export function Thread({
           </>
         ) : mode === 'current' ? (
           <>
-            {episodes.length > 1 && <EarlierInCard t={t} n={episodes.length - 1} host={host} />}
-            {episodes.slice(-1).map((ep) => (
-              <EpisodeBlock key={ep.index} world={world} ep={ep} last cp={cp} t={t} />
+            {episodes.length > 2 && <EarlierInCard t={t} n={episodes.length - 2} host={host} />}
+            {/* Попереднє звернення — згорнутим рядком: оператор бачить, що клієнт уже брав. */}
+            {episodes.slice(-2).map((ep) => (
+              <EpisodeBlock key={ep.index} world={world} ep={ep} last={ep.index === episodes.length - 1} cp={cp} t={t} />
             ))}
           </>
         ) : (
@@ -335,6 +344,7 @@ function TakenStrip({
   meId,
   role,
   readOnly,
+  mode,
   onTook,
 }: {
   world: World
@@ -343,6 +353,7 @@ function TakenStrip({
   meId: string
   role: string
   readOnly?: boolean
+  mode: 'episodes' | 'flat' | 'current'
   onTook: () => void
 }) {
   const { dispatch } = useStore()
@@ -351,11 +362,19 @@ function TakenStrip({
   const taker = staffById(world, owner?.staffId)
   const mine = owner?.staffId === meId
   const wait = waitMin(cur ?? null, world.now)
+  const takeOver = role !== 'head' && !readOnly && canTakeOver(owner, meId, wait, SLA_MIN)
+  const take = () => {
+    dispatch({ type: 'TAKE', threadId: t.id, staffId: meId })
+    requestAnimationFrame(onTook)
+  }
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
       {cur && <StatusBadge ep={cur} now={world.now} />}
       {wait != null && (
-        <span className={cn('text-label tabular-nums', wait > SLA_MIN ? 'font-medium text-danger-fg' : 'text-warning-fg')}>без відповіді {fmtGap(wait)}</span>
+        <span className={cn('text-label tabular-nums', wait > SLA_MIN ? 'font-medium text-danger-fg' : 'text-warning-fg')} data-wait="">
+          {/* У В годинник той самий, що в черзі: дедлайн SLA, а не «скільки чекає». */}
+          {mode === 'current' ? (wait > SLA_MIN ? `SLA прострочено на ${fmtGap(wait - SLA_MIN)}` : `SLA через ${fmtGap(SLA_MIN - wait)}`) : `без відповіді ${fmtGap(wait)}`}
+        </span>
       )}
       <span className="ml-auto flex items-center gap-2">
         {taker ? (
@@ -364,22 +383,32 @@ function TakenStrip({
             {mine ? 'Веду я' : `Веде ${taker.name}`}
             {owner!.responsible ? ' · відповідальний менеджер' : ` з ${timeOf(owner!.at)}`}
           </span>
-        ) : role !== 'head' && !readOnly ? (
+        ) : null}
+        {taker && takeOver && (
           <button
             type="button"
-            onClick={() => {
-              dispatch({ type: 'TAKE', threadId: t.id, staffId: meId })
-              requestAnimationFrame(onTook)
-            }}
+            onClick={take}
+            title={owner!.responsible ? 'Менеджер не відповідає понад годину — відповісти замість нього' : 'Клієнт чекає довше за SLA — взяти звернення собі'}
+            className="inline-flex h-7 items-center gap-1.5 rounded-md border border-danger/40 bg-card px-2.5 text-label font-semibold text-danger-fg hover:bg-danger-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg"
+            data-take-over=""
+          >
+            Перехопити <kbd className="rounded-sm bg-danger-soft px-1 font-mono text-mono">T</kbd>
+          </button>
+        )}
+        {taker ? null : role !== 'head' && !readOnly ? (
+          <button
+            type="button"
+            onClick={take}
             className="inline-flex h-7 items-center gap-1.5 rounded-md bg-fg px-2.5 text-label font-semibold text-primary-fg hover:bg-fg-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-1"
             data-take=""
           >
-            Взяти <kbd className="rounded-sm bg-white/15 px-1 font-mono text-mono">Т</kbd>
+            Взяти <kbd className="rounded-sm bg-white/15 px-1 font-mono text-mono">T</kbd>
           </button>
         ) : (
           <span className="text-label text-muted-fg">Ніхто не взяв</span>
         )}
-        {!readOnly && cur && cur.status !== 'closed' && (mine || role === 'manager') && (
+        {/* У А закриття немає — кнопка, яка нічого не змінює, тільки обманює. */}
+        {!readOnly && mode !== 'flat' && cur && cur.status !== 'closed' && (mine || role === 'manager') && (
           <button
             type="button"
             onClick={() => dispatch({ type: 'CLOSE', threadId: t.id })}
@@ -395,6 +424,12 @@ function TakenStrip({
 }
 
 export function StatusBadge({ ep, now }: { ep: Episode; now: string }) {
+  if (rentGoesOn(ep, now))
+    return (
+      <Badge variant="success" data-status="rent">
+        Оренда {ep.occasion!.code} до {ep.occasion!.until!.slice(8, 10)}.{ep.occasion!.until!.slice(5, 7)}
+      </Badge>
+    )
   if (ep.status === 'closed') {
     return (
       <Badge variant={ep.result === 'none' ? 'danger' : 'success'} data-status="closed">
@@ -479,6 +514,16 @@ function EarlierInCard({ t, n, host }: { t: ThreadT; n: number; host: 'drawer' |
 
 function ReadOnlyBar({ t }: { t: ThreadT }) {
   const { openDrawer } = useNav()
+  const { role } = useLab()
+  if (role === 'head')
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-t border-border bg-bg px-4 py-2">
+        <span className="text-label text-fg-2">Архів для читання.</span>
+        <button type="button" onClick={() => openDrawer({ kind: 'thread', id: t.id })} className="ml-auto inline-flex h-7 items-center rounded-md border border-border bg-card px-2.5 text-label font-medium text-fg-2 hover:bg-muted" data-reply-open="">
+          Відкрити звернення
+        </button>
+      </div>
+    )
   return (
     <div className="flex shrink-0 items-center gap-2 border-t border-border bg-bg px-4 py-2">
       <span className="text-label text-muted-fg">Архів для читання. Відповідь — у вікні звернення.</span>
@@ -513,7 +558,7 @@ const PAGE = 80
 
 function EpisodeBlock({ world, ep, last, cp, t }: { world: World; ep: Episode; last: boolean; cp: Counterparty | null; t: ThreadT }) {
   const [open, setOpen] = useState(last)
-  const s = episodeSummary(ep, last && ep.index === 0 ? t.summary : undefined)
+  const s = episodeSummary(ep, last && ep.index === 0 ? t.summary : undefined, world.now)
   return (
     <section className={cn('mb-3', !last && 'opacity-95')} data-episode={ep.index}>
       <button
@@ -586,7 +631,7 @@ function EventList({ world, events, cp, t }: { world: World; events: ThreadEvent
                   </div>
                 )}
                 {pause >= 30 && (
-                  <div className="flex items-center justify-center gap-1 text-label text-subtle">
+                  <div className="flex items-center justify-center gap-1 text-label text-muted-fg">
                     <Clock className="size-3" aria-hidden /> пауза {fmtGap(pause)}
                   </div>
                 )}
@@ -681,6 +726,15 @@ function CallItem({ world, e, base }: { world: World; e: Extract<ThreadEvent, { 
 function OutgoingNotice({ world, e, base }: { world: World; e: MsgEvent; base: object }) {
   const d = e.delivery ? DELIVERY[e.delivery] : null
   const staff = staffById(world, e.staffId)
+  const { dispatch } = useStore()
+  const { role } = useLab()
+  const thread = world.threads.find((x) => x.events.some((y) => y.id === e.id))
+  const resend = () => {
+    if (!thread) return
+    const id = `sent${thread.events.length}`
+    dispatch({ type: 'SEND', threadId: thread.id, msg: { channel: e.channel, from: 'staff', staffId: ME_BY_ROLE[role as keyof typeof ME_BY_ROLE], text: e.text, delivery: 'queued', template: e.template } })
+    window.setTimeout(() => dispatch({ type: 'DELIVER', threadId: thread.id, eventId: id, delivery: 'delivered' }), 1600)
+  }
   return (
     <div {...base} data-channel={e.channel} className="ml-auto flex w-[82%] flex-col items-end">
       <span className="mb-0.5 flex items-center gap-1.5 text-label text-muted-fg">
@@ -698,7 +752,12 @@ function OutgoingNotice({ world, e, base }: { world: World; e: MsgEvent; base: o
             {d.label}
           </Badge>
         )}
-        {e.delivery === 'failed' ? 'Клієнт не отримав — зателефонуйте.' : 'Одностороннє: відповісти на нього клієнт не може.'}
+        {e.delivery === 'failed' ? 'Клієнт не отримав.' : 'Одностороннє: відповісти на нього клієнт не може.'}
+        {e.delivery === 'failed' && role !== 'head' && (
+          <button type="button" onClick={resend} className="rounded-md border border-border bg-card px-1.5 py-0.5 font-medium text-fg-2 hover:bg-muted" data-resend="">
+            Надіслати ще раз
+          </button>
+        )}
       </span>
     </div>
   )
@@ -732,10 +791,16 @@ function Composer({
     return options.find((o) => !(t.botDown && o === 'telegram')) ?? null
   }
   const [channel, setChannel] = useState<MsgChannel | null>(preferred)
-  const [text, setText] = useState(() => (intent === 'sms' && t.aiDraft ? t.aiDraft : ''))
+  const [text, setTextState] = useState(() => DRAFTS.get(t.id) ?? (intent === 'sms' && t.aiDraft ? t.aiDraft : ''))
+  // Чернетка живе за тредом: закрив дровер чи перейшов до іншого клієнта — текст не пропав.
+  const setText = (v: string) => {
+    DRAFTS.set(t.id, v)
+    setTextState(v)
+  }
   const [aiDraft, setAiDraft] = useState(intent === 'sms' && !!t.aiDraft)
   const owner = ownerOf(world, t)
   const takenByOther = !!owner && owner.staffId !== meId && role === 'operator'
+  const takeOverHint = takenByOther && canTakeOver(owner, meId, waitMin((episodesOf(t, world.now).slice(-1)[0]) ?? null, world.now), SLA_MIN)
   const isHead = role === 'head'
   const disabledReason = isHead
     ? 'Керівник читає листування; відповідає оператор або менеджер.'
@@ -744,6 +809,7 @@ function Composer({
         ? `Клієнта веде відповідальний менеджер ${staffById(world, owner!.staffId)?.name}.`
         : `Звернення веде ${staffById(world, owner!.staffId)?.name}. Відповідати може тільки той, хто взяв.`
       : null
+  const reasonLine = disabledReason && (takeOverHint ? `${disabledReason} Клієнт чекає задовго — можна перехопити.` : disabledReason)
 
   if (!options.length || !channel)
     return (
@@ -763,6 +829,7 @@ function Composer({
     })
     if (channel === 'sms') window.setTimeout(() => dispatch({ type: 'DELIVER', threadId: t.id, eventId: id, delivery: 'delivered' }), 1600)
     setText('')
+    DRAFTS.delete(t.id)
     setAiDraft(false)
   }
 
@@ -812,6 +879,11 @@ function Composer({
           <AlertTriangle className="size-3 shrink-0" aria-hidden /> Telegram-бот недоступний: відповідь у Telegram не дійде. {channel === 'sms' ? 'Обрано SMS.' : 'Надішліть SMS.'}
         </div>
       )}
+      {reasonLine && (
+        <p className="mb-1 text-label text-fg-2" data-disabled-reason="">
+          {reasonLine}
+        </p>
+      )}
       <div className={cn('flex items-end gap-2 rounded-lg border bg-card px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-fg', disabledReason ? 'border-border bg-muted/50' : 'border-border-strong')}>
         <textarea
           ref={textareaRef}
@@ -825,7 +897,7 @@ function Composer({
           }}
           disabled={!!disabledReason}
           rows={1}
-          placeholder={disabledReason ?? (channel === 'sms' ? 'SMS клієнту…' : `Відповідь у ${CHANNEL_META[channel].label}…`)}
+          placeholder={disabledReason ? 'Відповідь недоступна' : channel === 'sms' ? 'SMS клієнту…' : `Відповідь у ${CHANNEL_META[channel].label}…`}
           className="max-h-32 min-h-[22px] flex-1 resize-none bg-transparent py-0.5 text-body text-fg [field-sizing:content] placeholder:text-subtle focus-visible:outline-none disabled:cursor-not-allowed"
           data-reply-field=""
           aria-label="Поле відповіді"

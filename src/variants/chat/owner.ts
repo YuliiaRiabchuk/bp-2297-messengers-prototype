@@ -18,3 +18,16 @@ export function ownerOf(world: World, t: Thread): Owner | null {
   if (managerId) return { staffId: managerId, at: t.events[0]?.at ?? world.now, responsible: true }
   return null
 }
+
+/** Скільки хвилин відповідальний менеджер може не відповідати, доки оператор не перехопить. */
+export const ESCALATE_MIN = 60
+
+/**
+ * Перехопити чуже звернення можна, коли клієнт чекає довше за SLA (15 хв), а
+ * клієнта відповідального менеджера — довше за годину. Інакше звернення
+ * губиться: «відповідати може тільки той, хто взяв», а той мовчить.
+ */
+export function canTakeOver(owner: Owner | null, meId: string, waitMin: number | null, sla: number) {
+  if (!owner || owner.staffId === meId || waitMin == null) return false
+  return waitMin > (owner.responsible ? ESCALATE_MIN : sla)
+}

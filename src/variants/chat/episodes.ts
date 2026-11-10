@@ -36,7 +36,8 @@ const isLink = (e: ThreadEvent) => e.kind === 'system' && !!e.occasion && /по�
 /** Подія клієнта, що чекає реакції: повідомлення клієнта або пропущений дзвінок. */
 const fromClient = (e: ThreadEvent) => (e.kind === 'msg' && e.from === 'client') || (e.kind === 'call' && e.dir === 'missed')
 /** Наша реакція: відповідь співробітника, вихідний чи прийнятий дзвінок. */
-const fromUs = (e: ThreadEvent) => (e.kind === 'msg' && e.from === 'staff') || (e.kind === 'call' && e.dir !== 'missed')
+/** Недоставлене SMS — не відповідь: клієнт нічого не отримав. */
+const fromUs = (e: ThreadEvent) => (e.kind === 'msg' && e.from === 'staff' && e.delivery !== 'failed') || (e.kind === 'call' && e.dir !== 'missed')
 
 export function episodesOf(t: Thread, now: Iso): Episode[] {
   const groups: ThreadEvent[][] = []
@@ -119,7 +120,7 @@ export const RESULT_LABEL: Record<Exclude<EpisodeResult, null>, string> = {
  * модель: що просив — перше повідомлення або суть першого дзвінка клієнта;
  * що дали — остання наша відповідь; домовились — результат; далі — чий хід.
  */
-export function episodeSummary(ep: Episode, override?: Summary): Summary {
+export function episodeSummary(ep: Episode, override?: Summary, now?: Iso): Summary {
   if (override) return override
   const clip = (s: string, n = 140) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
   const firstAsk = ep.events.find((e) => (e.kind === 'msg' && e.from === 'client') || (e.kind === 'call' && e.summary))
@@ -141,7 +142,9 @@ export function episodeSummary(ep: Episode, override?: Summary): Summary {
         : ep.status === 'closed'
           ? ep.result === 'none'
             ? 'Наступної дії немає.'
-            : 'Звернення закрите.'
+            : rentGoesOn(ep, now)
+              ? `Оренда ${ep.occasion!.code} триває до ${ddmm(ep.occasion!.until!)}.`
+              : 'Звернення закрите.'
           : '—'
   return { asked: clip(asked), given: clip(given), agreed, next }
 }
@@ -192,4 +195,11 @@ export function periodEpisode(t: Thread, now: Iso, days: number | null): Episode
     }
   }
   return { ...base, occasion, result }
+}
+
+const ddmm = (iso: Iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`
+
+/** Звернення закрилось, а оренда, якої воно стосується, ще триває: справа не закінчена. */
+export function rentGoesOn(ep: Episode, now?: Iso): boolean {
+  return !!now && ep.status === 'closed' && ep.occasion?.kind === 'rent' && !!ep.occasion.until && ep.occasion.until > now
 }

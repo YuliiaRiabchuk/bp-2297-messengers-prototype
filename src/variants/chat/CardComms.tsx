@@ -65,7 +65,7 @@ export function CardComms({ kind, layout, thread }: { kind: CommsKind; layout: C
       icon={layout === 'history' ? <Clock /> : <MessagesSquare />}
       title={layout === 'history' ? 'Історія' : 'Комунікації'}
       count={kind !== 'A' && episodes.length ? episodes.length : undefined}
-      headExtra={<Proposal />}
+      headExtra={<>{kind !== 'A' && episodes.length > 0 && <span className="text-label text-muted-fg">звернень</span>}<Proposal /></>}
       data-testid="card-comms"
       className={layout === 'tabs' ? 'h-full' : undefined}
       bodyClassName={layout === 'tabs' ? 'flex-1' : undefined}
@@ -111,8 +111,9 @@ function EpisodeLink({ ep, active, onPick }: { ep: Episode; active: boolean; onP
           {dayOf(ep.start) !== dayOf(ep.end) ? `–${shortDate(ep.end)}` : ''}
         </span>
         {ep.occasion && <span className="text-label tabular-nums text-muted-fg">{ep.occasion.code}</span>}
-        <span className={cn('ml-auto shrink-0 text-label', ep.status !== 'closed' ? 'text-warning-fg' : ep.result === 'none' ? 'text-danger-fg' : 'text-success-fg')}>
-          {ep.status !== 'closed' ? 'відкрите' : RESULT_LABEL[ep.result ?? 'none']}
+        <span className={cn('ml-auto shrink-0 text-label', ep.status !== 'closed' ? 'text-warning-fg' : ep.inherited ? 'text-muted-fg' : ep.result === 'none' ? 'text-danger-fg' : 'text-success-fg')}>
+          {/* Успадковане звернення — не нова оренда; воронка його не рахує, тож і тут не «Оренда». */}
+          {ep.status !== 'closed' ? 'відкрите' : ep.inherited ? 'у межах оренди' : RESULT_LABEL[ep.result ?? 'none']}
         </span>
       </span>
       <span className="line-clamp-1 text-label text-muted-fg">{episodeSummary(ep).asked}</span>
@@ -125,7 +126,7 @@ function MonthAside({ world, thread, episodes, focus, onPick }: { world: World; 
   const month = episodes.filter((e) => minutesBetween(e.end, world.now) <= MONTH_MIN)
   const cur = episodes[episodes.length - 1]
   const listed = (showAll ? episodes : month).slice().reverse()
-  const next = thread.summary?.next ?? (cur ? episodeSummary(cur, cur.index === 0 ? thread.summary : undefined).next : null)
+  const next = thread.summary?.next ?? (cur ? episodeSummary(cur, cur.index === 0 ? thread.summary : undefined, world.now).next : null)
   return (
     <>
       <div className="border-b border-border/60 px-3.5 py-3" data-answer-month="">
@@ -185,8 +186,8 @@ function ArchiveAside({ world, thread, episodes, focus, onPick }: { world: World
             <StatusBadge ep={cur} now={world.now} />
           </div>
         )}
-        {(thread.summary?.next ?? (cur && episodeSummary(cur, cur.index === 0 ? thread.summary : undefined).next)) && (
-          <p className="mb-2 text-body font-medium text-fg">{thread.summary?.next ?? episodeSummary(cur!, cur!.index === 0 ? thread.summary : undefined).next}</p>
+        {(thread.summary?.next ?? (cur && episodeSummary(cur, cur.index === 0 ? thread.summary : undefined, world.now).next)) && (
+          <p className="mb-2 text-body font-medium text-fg">{thread.summary?.next ?? episodeSummary(cur!, cur!.index === 0 ? thread.summary : undefined, world.now).next}</p>
         )}
         <div className="mb-1.5 text-mono font-semibold uppercase tracking-wider text-muted-fg">За 30 днів</div>
         <Funnel month={month} />
