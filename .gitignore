@@ -1,0 +1,18 @@
+node_modules
+dist
+.DS_Store
+*.local
+.vite
+*.tsbuildinfo
+shots/*.tmp
+audit*.json
+audit*.err
+# Кадри чинного екрана містять реальні імена й телефони клієнтів: у публічну репу не йдуть.
+reference/*.png
+# Нотатки з приватного коду CRM (для порту варіанта 0) — теж тільки локально.
+reference/*.md
+# Робочі файли live-сервера impeccable.
+.impeccable/live/
+
+# Робочі дерева Claude Code — локальні.
+.claude/worktrees/
