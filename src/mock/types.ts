@@ -53,6 +53,8 @@ export interface CallEvent extends EventBase {
   line: string
   purpose?: string
   summary?: string
+  /** Обладнання, про яке говорили (з транскрипції). */
+  equipment?: string[]
   transcript?: string
   /** Резерв/оренда, створені за цим дзвінком. */
   created?: Occasion

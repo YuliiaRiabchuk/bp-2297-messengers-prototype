@@ -82,10 +82,10 @@ function Sidebar() {
     {
       label: 'Замовлення',
       items: [
-        { label: 'Оренди', icon: Package },
+        { label: 'Оренди', icon: Package, route: { screen: 'stub', name: 'rents' }, match: (r) => r.screen === 'stub' && r.name === 'rents' },
         { label: 'Банк', icon: Landmark },
         { label: 'Каса', icon: Wallet },
-        { label: 'Резерви', icon: CalendarClock },
+        { label: 'Резерви', icon: CalendarClock, route: { screen: 'stub', name: 'reserves' }, match: (r) => r.screen === 'stub' && r.name === 'reserves' },
       ],
     },
     {
@@ -99,7 +99,7 @@ function Sidebar() {
     {
       label: 'Склади',
       items: [
-        { label: 'Каталог', icon: BookOpen },
+        { label: 'Каталог', icon: BookOpen, route: { screen: 'stub', name: 'catalog' }, match: (r) => r.screen === 'stub' && r.name === 'catalog' },
         { label: 'Склади', icon: Warehouse },
         { label: 'Рухи', icon: Boxes },
       ],

@@ -210,13 +210,13 @@ export function LabWidget() {
           <Label>Картка · листування</Label>
           <div className="mt-1.5 flex flex-wrap gap-1">
             {CARD_LAYOUTS.map((c) => (
-              <Chip key={c.key} active={lab.card === c.key} onClick={() => lab.setCard(c.key)} title={c.note} disabled={lab.variant.startsWith('0') || lab.variant === 'Г'}>
+              <Chip key={c.key} active={lab.card === c.key} onClick={() => lab.setCard(c.key)} title={c.note} disabled={lab.variant.startsWith('0') || ['Г', 'Д', 'Е'].includes(lab.variant)}>
                 {c.label}
               </Chip>
             ))}
           </div>
           <p className="mt-1.5 text-label text-muted-fg">
-            {lab.variant === 'Г' ? 'У Г — завжди окрема вкладка «Комунікації» (PM-синк 10.11).' : lab.variant.startsWith('0') ? 'Для А, Б, В: у 0 і 0б листування в картці таке, як є.' : CARD_LAYOUTS.find((c) => c.key === lab.card)?.note}
+            {['Г', 'Д', 'Е'].includes(lab.variant) ? 'У Г, Д, Е — завжди окрема вкладка «Комунікації» (PM-синк 10.11).' : lab.variant.startsWith('0') ? 'Для А, Б, В: у 0 і 0б листування в картці таке, як є.' : CARD_LAYOUTS.find((c) => c.key === lab.card)?.note}
           </p>
         </section>
 

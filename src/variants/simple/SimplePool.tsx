@@ -12,7 +12,7 @@ import { useStore } from '@/state/store'
 import type { MsgEvent, Thread, World } from '@/mock/types'
 import { ChannelGlyph } from '../chat/Thread'
 import { flatEpisode, SLA_MIN, waitMin } from '../chat/episodes'
-import { ownerOf } from '../chat/owner'
+import { ownerFor, type Flavor } from './SimpleChat'
 
 /**
  * Пул варіанта Г — той самий вигляд, що журнал дзвінків: таблиця, групи по
@@ -40,7 +40,8 @@ export function simpleRows(world: World): Row[] {
 
 type Filter = 'all' | 'waiting' | 'mine'
 
-export function SimplePool() {
+export function SimplePool({ flavor = 'Г' }: { flavor?: Flavor }) {
+  const owners = ownerFor(flavor)
   const { world } = useStore()
   const { role } = useLab()
   const { openDrawer, drawer } = useNav()
@@ -48,7 +49,7 @@ export function SimplePool() {
   const [filter, setFilter] = useState<Filter>('all')
   const body = useRef<HTMLTableSectionElement>(null)
   const all = useMemo(() => simpleRows(world), [world])
-  const rows = all.filter((r) => (filter === 'waiting' ? r.wait != null : filter === 'mine' ? ownerOf(world, r.t)?.staffId === meId : true))
+  const rows = all.filter((r) => (filter === 'waiting' ? r.wait != null : filter === 'mine' ? owners(world, r.t)?.staffId === meId : true))
   const waiting = rows.filter((r) => r.wait != null)
   const rest = rows.filter((r) => r.wait == null)
   // Групи — як у журналі: «Чекають відповіді» зверху, далі дні.
@@ -110,7 +111,7 @@ export function SimplePool() {
               <Group key={g.key} label={g.label} count={g.rows.length} cols={drawer ? 4 : 6}>
                 {g.rows.map((r) => {
                   const cp = cpById(world, r.t.counterpartyId)
-                  const owner = ownerOf(world, r.t)
+                  const owner = owners(world, r.t)
                   const taker = staffById(world, owner?.staffId)
                   const overdue = r.wait != null && r.wait > SLA_MIN
                   const open = () => openDrawer({ kind: 'thread', id: r.t.id })
@@ -164,6 +165,7 @@ export function SimplePool() {
                           {taker ? (
                             <span className="truncate text-label" data-taken-by={taker.id}>
                               {taker.id === meId ? 'Ви' : taker.name}
+                              {owner?.lastContact && <span className="block text-muted-fg">останній контакт</span>}
                             </span>
                           ) : (
                             <span className="rounded-md border border-dashed border-border-strong px-1.5 py-0.5 text-label text-muted-fg">Не призначено</span>

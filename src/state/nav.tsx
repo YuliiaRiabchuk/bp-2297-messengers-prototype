@@ -10,11 +10,13 @@ export type Route =
   | { screen: 'calls'; tab: CallsTab }
   | { screen: 'cp'; id: string }
   | { screen: 'mytasks' }
+  /** Розділи CRM, куди оператор ходить, поки чат відкритий (Д, Е): каталог, оренди, резерви. */
+  | { screen: 'stub'; name: 'catalog' | 'rents' | 'reserves' }
 
 /** `intent: 'sms'` — вікно листування відкрито з колонки «Чат з клієнтом»: SMS з AI-підказкою. */
 export type Drawer = { kind: 'call' | 'task' | 'thread'; id: string; intent?: 'sms' | 'reply' } | null
 
-const encodeRoute = (r: Route) => (r.screen === 'calls' ? `calls:${r.tab}` : r.screen === 'cp' ? `cp:${r.id}` : 'mytasks')
+const encodeRoute = (r: Route) => (r.screen === 'calls' ? `calls:${r.tab}` : r.screen === 'cp' ? `cp:${r.id}` : r.screen === 'stub' ? `stub:${r.name}` : 'mytasks')
 
 function decodeRoute(s: string | null): Route | null {
   if (!s) return null
@@ -22,6 +24,7 @@ function decodeRoute(s: string | null): Route | null {
   if (screen === 'calls' && arg) return { screen, tab: arg as CallsTab }
   if (screen === 'cp' && arg) return { screen, id: arg }
   if (screen === 'mytasks') return { screen }
+  if (screen === 'stub' && (arg === 'catalog' || arg === 'rents' || arg === 'reserves')) return { screen, name: arg }
   return null
 }
 
@@ -37,6 +40,9 @@ interface Nav {
   drawer: Drawer
   go: (r: Route, drawer?: Drawer) => void
   openDrawer: (d: Drawer) => void
+  /** Чат, згорнутий у віджет поверх CRM: переживає перехід між екранами. */
+  dock: string | null
+  setDock: (id: string | null) => void
 }
 
 const Ctx = createContext<Nav | null>(null)
@@ -53,7 +59,7 @@ const urlEntry = (() => {
 })()
 let urlEntryKey: string | null = null
 
-export function NavProvider({ entry, sceneKey, children }: { entry: { route: Route; drawer: Drawer }; sceneKey: string; children: ReactNode }) {
+export function NavProvider({ entry, sceneKey, keepChat = false, children }: { entry: { route: Route; drawer: Drawer }; sceneKey: string; keepChat?: boolean; children: ReactNode }) {
   const [state, setState] = useState(() => {
     if (urlEntry && (urlEntryKey === null || urlEntryKey === sceneKey)) {
       urlEntryKey = sceneKey
@@ -70,9 +76,25 @@ export function NavProvider({ entry, sceneKey, children }: { entry: { route: Rou
     window.history.replaceState(null, '', `${window.location.pathname}?${q}`)
   }, [state])
 
-  const go = useCallback((route: Route, drawer: Drawer = null) => setState({ route, drawer }), [])
+  const [dock, setDockState] = useState<string | null>(() => new URLSearchParams(window.location.search).get('w'))
+  // Перехід на інший екран, поки відкритий тред, згортає його у віджет — якщо варіант це вміє.
+  const go = useCallback(
+    (route: Route, drawer: Drawer = null) =>
+      setState((s) => {
+        if (keepChat && s.drawer?.kind === 'thread' && !drawer) setDockState(s.drawer.id)
+        return { route, drawer }
+      }),
+    [keepChat],
+  )
   const openDrawer = useCallback((drawer: Drawer) => setState((s) => ({ ...s, drawer })), [])
-  const value = useMemo(() => ({ ...state, go, openDrawer }), [state, go, openDrawer])
+  const setDock = useCallback((id: string | null) => setDockState(id), [])
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (dock) q.set('w', dock)
+    else q.delete('w')
+    window.history.replaceState(null, '', `${window.location.pathname}?${q}`)
+  }, [dock])
+  const value = useMemo(() => ({ ...state, go, openDrawer, dock, setDock }), [state, go, openDrawer, dock, setDock])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

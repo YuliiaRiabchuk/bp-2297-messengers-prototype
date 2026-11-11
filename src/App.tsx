@@ -10,6 +10,7 @@ import { Shell } from '@/app/Shell'
 import { CallsPage } from '@/screens/calls/CallsPage'
 import { CounterpartyPage } from '@/screens/cp/CounterpartyPage'
 import { MyTasksPage } from '@/screens/tasks/MyTasksPage'
+import { StubPage } from '@/screens/StubPage'
 import { CallDrawer, TaskDrawer } from '@/screens/drawers'
 import { IMPLS, cardSlotsFor, prodEntry } from '@/variants/registry'
 
@@ -28,14 +29,17 @@ export default function App() {
 
 function Frame() {
   const { resetKey, sceneId, variant } = useLab()
-  const world = useMemo(() => buildWorld(sceneId), [sceneId, resetKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  const scene = SCENE_BY_ID.get(sceneId)!
   const impl = IMPLS[variant] ?? {}
+  const world = useMemo(() => {
+    const w = buildWorld(sceneId)
+    return impl.transformWorld ? impl.transformWorld(w) : w
+  }, [sceneId, resetKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const scene = SCENE_BY_ID.get(sceneId)!
   const entry = impl.entry?.(scene.entry, world) ?? prodEntry(scene.entry, world)
   return (
     <>
       <StoreProvider key={resetKey} initial={world}>
-        <NavProvider key={resetKey} sceneKey={resetKey} entry={entry}>
+        <NavProvider key={resetKey} sceneKey={resetKey} entry={entry} keepChat={!!impl.keepChat}>
           <Screens />
         </NavProvider>
       </StoreProvider>
@@ -48,7 +52,7 @@ function Frame() {
 function Screens() {
   const { variant } = useLab()
   const { world } = useStore()
-  const { route, drawer } = useNav()
+  const { route, drawer, dock } = useNav()
   const impl = IMPLS[variant] ?? {}
 
   const drawerNode = drawer
@@ -61,6 +65,8 @@ function Screens() {
       {route.screen === 'calls' && <CallsPage ext={impl.calls?.(world)} />}
       {route.screen === 'cp' && <CounterpartyPage id={route.id} slots={cardSlotsFor(variant, world)} />}
       {route.screen === 'mytasks' && <MyTasksPage />}
+      {route.screen === 'stub' && <StubPage name={route.name} />}
+      {dock && impl.widget?.(dock)}
     </Shell>
   )
 }

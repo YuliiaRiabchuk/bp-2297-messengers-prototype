@@ -88,7 +88,7 @@ const BG: Counterparty[] = [
 
 function backgroundThreads(): Thread[] {
   return [
-    thread({ counterpartyId: 'bg1', events: [call(today('08:47'), 'in', { talkSec: 132, purpose: 'Замовлення', summary: 'Перфоратор на 2 доби, Куренівка; створено резерв.', created: { kind: 'reserve', code: 'Р-3K9TA', label: 'Перфоратор Bosch GBH 2-26' } })] }),
+    thread({ counterpartyId: 'bg1', events: [call(today('08:47'), 'in', { talkSec: 132, purpose: 'Замовлення', equipment: ['Перфоратор Bosch GBH 2-26'], summary: 'Перфоратор на 2 доби, Куренівка; створено резерв.', created: { kind: 'reserve', code: 'Р-3K9TA', label: 'Перфоратор Bosch GBH 2-26' } })] }),
     thread({
       counterpartyId: 'bg2',
       events: [
@@ -100,20 +100,20 @@ function backgroundThreads(): Thread[] {
       counterpartyId: 'bg3',
       takenBy: { staffId: 'karyna', at: today('10:22') },
       events: [
-        call(today('09:58'), 'in', { talkSec: 61, operatorId: 'karyna', purpose: 'Консультація', summary: 'Питала про заставу на віброплиту.' }),
+        call(today('09:58'), 'in', { talkSec: 61, operatorId: 'karyna', purpose: 'Консультація', equipment: ['Віброплита 90 кг'], summary: 'Питала про заставу на віброплиту.' }),
         msg(today('10:20'), 'telegram', 'client', 'Надішліть, будь ласка, фото віброплити, яку даєте.'),
         msg(today('10:31'), 'telegram', 'staff', 'Олено Петрівно, ось фото й характеристики: 90 кг, плита 50×60 см.', { staffId: 'karyna' }),
       ],
     }),
     thread({ counterpartyId: 'bg4', events: [call(today('11:20'), 'missed', { waitSec: 41 })] }),
-    thread({ counterpartyId: 'bg5', events: [call(today('11:41'), 'in', { talkSec: 305, purpose: 'Замовлення', summary: 'Бетонозмішувач 160 л на тиждень, доставка завтра.', created: { kind: 'rent', code: 'А-7R2MC', label: 'Бетонозмішувач 160 л', until: '2026-11-16T11:41' } })] }),
+    thread({ counterpartyId: 'bg5', events: [call(today('11:41'), 'in', { talkSec: 305, purpose: 'Замовлення', equipment: ['Бетонозмішувач 160 л'], summary: 'Бетонозмішувач 160 л на тиждень, доставка завтра.', created: { kind: 'rent', code: 'А-7R2MC', label: 'Бетонозмішувач 160 л', until: '2026-11-16T11:41' } })] }),
     thread({
       counterpartyId: 'bg6',
       takenBy: { staffId: 'oksana', at: '2026-11-08T17:12' },
       events: [
         msg('2026-11-08T17:10', 'viber', 'client', 'Генератор не заводиться, що робити?'),
         msg('2026-11-08T17:25', 'viber', 'staff', 'Ігорю Степановичу, перевірте, будь ласка, кран подачі пального. Якщо не допоможе — привезіть, замінимо.', { staffId: 'oksana' }),
-        call(today('12:32'), 'in', { talkSec: 44, operatorId: 'karyna', purpose: 'Скарга', summary: 'Не заводиться генератор, передали в сервіс.' }),
+        call(today('12:32'), 'in', { talkSec: 44, operatorId: 'karyna', purpose: 'Скарга', equipment: ['Генератор 5 кВт'], summary: 'Не заводиться генератор, передали в сервіс.' }),
       ],
     }),
     thread({
@@ -132,7 +132,7 @@ function backgroundThreads(): Thread[] {
         msg('2026-11-03T09:00', 'telegram', 'client', 'Чи є перфоратор на вихідні?'),
         msg('2026-11-03T09:06', 'telegram', 'staff', 'Так, Bosch GBH 2-26, 220 грн/доба. Резервую?', { staffId: 'karyna' }),
         msg('2026-11-03T09:11', 'telegram', 'client', 'Так'),
-        call('2026-11-03T09:20', 'out', { operatorId: 'karyna', talkSec: 75, purpose: 'Замовлення', summary: 'Підтвердили перфоратор на вихідні.', created: { kind: 'reserve', code: 'Р-1HS4E', label: 'Перфоратор Bosch GBH 2-26' } }),
+        call('2026-11-03T09:20', 'out', { operatorId: 'karyna', talkSec: 75, purpose: 'Замовлення', equipment: ['Перфоратор Bosch GBH 2-26'], summary: 'Підтвердили перфоратор на вихідні.', created: { kind: 'reserve', code: 'Р-1HS4E', label: 'Перфоратор Bosch GBH 2-26' } }),
       ],
     }),
   ]
@@ -203,7 +203,7 @@ const SCENES: Record<string, () => SceneBuild> = {
       id: 'th-koval',
       counterpartyId: KOVAL.id,
       events: [
-        call(today('09:31'), 'in', { talkSec: 188, purpose: 'Замовлення', summary: 'Генератор на 3 доби з 10.11, Куренівка.', created: RESERVE_GEN }),
+        call(today('09:31'), 'in', { talkSec: 188, purpose: 'Замовлення', equipment: ['Генератор Honda EU22i'], summary: 'Генератор на 3 доби з 10.11, Куренівка.', created: RESERVE_GEN }),
         msg(today('09:40'), 'viber-notify', 'staff', 'Резерв Р-8M2DX: Генератор Honda EU22i, Куренівка, 10.11 з 9:00. Продовжити діалог у Telegram: t.me/budprokat_bot?start=R-8M2DX', { delivery: 'delivered', template: 'Резерв підтверджено' }),
         sys(today('13:02'), 'Клієнт перейшов за посиланням із повідомлення про резерв Р-8M2DX', { occasion: RESERVE_GEN }),
         msg(today('13:02'), 'telegram', 'client', 'Добрий день, а можна забрати не о 9, а о 8:30?'),
@@ -218,7 +218,7 @@ const SCENES: Record<string, () => SceneBuild> = {
       id: 'th-koval',
       counterpartyId: KOVAL.id,
       events: [
-        call(today('10:12'), 'in', { talkSec: 142, purpose: 'Консультація', summary: 'Питав ціну віброплити на тиждень і доставку в Ірпінь.', transcript: 'Клієнт: Скільки коштує віброплита на тиждень?… Оператор: 650 грн за добу, застава 8 000…' }),
+        call(today('10:12'), 'in', { talkSec: 142, purpose: 'Консультація', equipment: ['Віброплита 90 кг'], summary: 'Питав ціну віброплити на тиждень і доставку в Ірпінь.', transcript: 'Клієнт: Скільки коштує віброплита на тиждень?… Оператор: 650 грн за добу, застава 8 000…' }),
         msg(today('12:05'), 'telegram', 'client', 'Надішліть, будь ласка, адресу Куренівки, під\'їду подивитись.'),
         call(today('13:40'), 'missed', { waitSec: 52 }),
         call(today('15:34'), 'in', { talkSec: 97, operatorId: 'karyna', purpose: 'Консультація', summary: 'Перепитує адресу відділення: на повідомлення в Telegram не відповіли.' }),
@@ -251,7 +251,7 @@ const SCENES: Record<string, () => SceneBuild> = {
       id: 'th-pavl',
       counterpartyId: cp.id,
       events: [
-        call('2026-10-21T14:10', 'in', { talkSec: 76, purpose: 'Замовлення', summary: 'Болгарка на 2 доби, Куренівка.', created: { kind: 'rent', code: 'А-6BG2K', label: 'Болгарка Makita GA9020', until: '2026-10-23T14:10' } }),
+        call('2026-10-21T14:10', 'in', { talkSec: 76, purpose: 'Замовлення', equipment: ['Болгарка Makita GA9020'], summary: 'Болгарка на 2 доби, Куренівка.', created: { kind: 'rent', code: 'А-6BG2K', label: 'Болгарка Makita GA9020', until: '2026-10-23T14:10' } }),
         msg(today('18:40'), 'telegram', 'client', 'Добрий вечір. Завтра зранку потрібен відбійний молоток, на 2 доби. Встигну забрати о 8?'),
       ],
     })
@@ -347,7 +347,7 @@ const SCENES: Record<string, () => SceneBuild> = {
           talkSec: 214,
           operatorId: 'karyna',
           purpose: 'Замовлення',
-          summary: 'Плиткоріз на 2 доби з 11.11. Хоче адресу Позняків і перелік документів.',
+          equipment: ['Плиткоріз Sigma 3B4'], summary: 'Плиткоріз на 2 доби з 11.11. Хоче адресу Позняків і перелік документів.',
           created: { kind: 'reserve', code: 'Р-5W1PK', label: 'Плиткоріз Sigma 3B4' },
         }),
       ],
@@ -445,12 +445,12 @@ function regularHistory(): ThreadEvent[] {
   // Оренда з 20.10, 27.10 продовжена до 17.11.
   const SCAF_RENT = { kind: 'rent' as const, code: 'А-9PL3D', label: 'Риштування рамні 120 м²', until: '2026-11-17T10:00' }
   ev.push(
-    call('2026-10-13T10:05', 'in', { operatorId: 'alisa', talkSec: 312, purpose: 'Замовлення', summary: 'Риштування 120 м² на ЖК на Оболоні з 20.10, просять ціну з доставкою.' }),
+    call('2026-10-13T10:05', 'in', { operatorId: 'alisa', talkSec: 312, purpose: 'Замовлення', equipment: ['Риштування рамні 120 м²'], summary: 'Риштування 120 м² на ЖК на Оболоні з 20.10, просять ціну з доставкою.' }),
     msg('2026-10-13T11:30', 'telegram', 'staff', 'Комплект 120 м²: 2 980 грн/доба, доставка й монтаж 4 500 грн. Рахунок надішлю після підтвердження.', { staffId: 'alisa' }),
     msg('2026-10-14T09:12', 'telegram', 'client', 'Погоджено, ставте на 20.10.'),
     call('2026-10-14T09:40', 'out', { operatorId: 'alisa', talkSec: 140, purpose: 'Замовлення', summary: 'Підтвердили дату й адресу, створено резерв.', created: SCAF_RES }),
     sys('2026-10-20T08:10', 'Резерв Р-2QX8N перетворено на оренду А-9PL3D', { occasion: SCAF_RENT }),
-    call('2026-10-27T15:22', 'in', { operatorId: 'alisa', talkSec: 95, purpose: 'Консультація', summary: 'Просять продовжити на 2 тижні, до 17.11.' }),
+    call('2026-10-27T15:22', 'in', { operatorId: 'alisa', talkSec: 95, purpose: 'Консультація', equipment: ['Риштування рамні 120 м²'], summary: 'Просять продовжити на 2 тижні, до 17.11.' }),
     msg('2026-10-27T15:40', 'viber', 'staff', 'Продовження до 17.11 — рахунок № 1186 на 41 720 грн.', { staffId: 'alisa' }),
     msg('2026-11-05T16:02', 'viber', 'client', 'Рахунок оплатимо в понеділок.'),
     msg('2026-11-06T09:00', 'viber-notify', 'staff', 'Нагадування: оплата рахунку № 1186 до 07.11.', { delivery: 'delivered', template: 'Нагадування про оплату' }),

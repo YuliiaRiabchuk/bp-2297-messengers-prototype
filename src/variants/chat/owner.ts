@@ -31,3 +31,22 @@ export function canTakeOver(owner: Owner | null, meId: string, waitMin: number |
   if (!owner || owner.staffId === meId || waitMin == null) return false
   return waitMin > (owner.responsible ? ESCALATE_MIN : sla)
 }
+
+/**
+ * Е (планування 10.11): якщо ніхто не взяв і відповідального немає, діалог іде
+ * тому, з ким клієнт спілкувався останнім — хто останнім писав чи говорив з ним.
+ */
+export interface OwnerEx extends Owner {
+  lastContact?: boolean
+}
+
+export function ownerOfLast(world: World, t: Thread): OwnerEx | null {
+  const o = ownerOf(world, t)
+  if (o) return o
+  for (let i = t.events.length - 1; i >= 0; i--) {
+    const e = t.events[i]
+    const id = e.kind === 'msg' && e.from === 'staff' ? e.staffId : e.kind === 'call' && e.dir !== 'missed' ? e.operatorId : undefined
+    if (id) return { staffId: id, at: e.at, responsible: false, lastContact: true }
+  }
+  return null
+}

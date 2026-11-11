@@ -8,7 +8,7 @@ import type { CardSlots } from '@/screens/cp/CounterpartyPage'
 import { SevaChatsWidget, sevaHistoryLines } from './v0b/SevaChats'
 import type { Counterparty, Thread } from '@/mock/types'
 import { chatVariant } from './chat-variants'
-import { VARIANT_G } from './simple'
+import { VARIANT_D, VARIANT_E, VARIANT_G } from './simple'
 
 /**
  * Реалізація варіанта: що він додає до прод-екранів і куди веде точка входу
@@ -21,6 +21,12 @@ export interface VariantImpl {
   drawer?: (d: NonNullable<Drawer>) => ReactNode | undefined
   /** Куди веде точка входу сцени в цьому варіанті. */
   entry?: (e: Entry, w: World) => { route: Route; drawer: Drawer } | undefined
+  /** Перехід по CRM згортає відкритий чат у віджет (Д, Е). */
+  keepChat?: boolean
+  /** Віджет чату поверх CRM. */
+  widget?: (threadId: string) => ReactNode
+  /** Перетворення даних сцени під скоуп варіанта (Е: Viber поза скоупом). */
+  transformWorld?: (w: World) => World
 }
 
 /** Точки входу проду: пулу немає, повідомлення живуть у Ringostat. */
@@ -53,6 +59,8 @@ export const IMPLS: Record<string, VariantImpl> = {
   'Б': chatVariant('Б'),
   'В': chatVariant('В'),
   'Г': VARIANT_G,
+  'Д': VARIANT_D,
+  'Е': VARIANT_E,
 }
 
 /** Історія з діалогами Севи потребує світу — віддаємо фабрику. */
