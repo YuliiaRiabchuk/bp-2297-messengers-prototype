@@ -58,6 +58,16 @@ const CHANNEL_LABEL: Record<MsgChannel, string> = {
   'viber-notify': 'Viber · TurboSMS',
 }
 
+/** Колір іконки каналу (Д, Е): впізнати канал з першого погляду, без підпису. */
+const CHANNEL_TONE: Record<MsgChannel, string> = {
+  telegram: 'text-accent',
+  viber: 'text-violet',
+  whatsapp: 'text-success',
+  site: 'text-teal',
+  sms: 'text-fg-2',
+  'viber-notify': 'text-violet',
+}
+
 export const ownerFor = (flavor: Flavor) => (flavor === 'Е' ? ownerOfLast : ownerOf) as (w: World, t: Thread) => OwnerEx | null
 
 function dayPill(iso: string, now: string) {
@@ -442,14 +452,21 @@ function Item({ world, e, flavor }: { world: World; e: ThreadEvent; flavor: Flav
         {rich ? (
           // Д, Е: канал, напрям і відправник — на кожному повідомленні (Ураков, BP-2437).
           <span className="mt-1 flex flex-wrap items-center justify-end gap-x-1 text-mono leading-tight text-muted-fg" data-msg-meta="">
-            {ours ? <ArrowUpRight className="size-3" aria-hidden /> : <ArrowDownLeft className="size-3" aria-hidden />}
-            <span>{ours ? 'Вихідне' : 'Вхідне'}</span>
-            <span>·</span>
-            <Icon className="size-3" aria-hidden />
-            <span>{CHANNEL_LABEL[e.channel]}</span>
+            {/* Напрям і канал — кольорові іконки; назва — у підказці й для скринрідера. */}
+            {ours ? (
+              <ArrowUpRight className="size-3.5 text-accent-fg" aria-label="Вихідне" role="img" data-direction="out">
+                <title>Вихідне</title>
+              </ArrowUpRight>
+            ) : (
+              <ArrowDownLeft className="size-3.5 text-success-fg" aria-label="Вхідне" role="img" data-direction="in">
+                <title>Вхідне</title>
+              </ArrowDownLeft>
+            )}
+            <Icon className={cn('size-3.5', CHANNEL_TONE[e.channel])} aria-label={CHANNEL_LABEL[e.channel]} role="img" data-channel-icon={e.channel}>
+              <title>{CHANNEL_LABEL[e.channel]}</title>
+            </Icon>
             {sender && (
               <>
-                <span>·</span>
                 <span className="text-fg-2" data-sender="">
                   {e.channel === 'viber-notify' ? 'автоматично' : sender}
                 </span>
