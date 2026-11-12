@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { LabProvider, useLab } from '@/lab/lab-state'
 import { LabWidget } from '@/lab/LabWidget'
+import { DemoPanel } from '@/lab/DemoPanel'
+import type { Route } from '@/state/nav'
 import { SCENE_BY_ID } from '@/lab/scenes'
 import { Toaster } from '@/components/ui/toast'
 import { buildWorld } from '@/mock/world'
@@ -28,14 +30,23 @@ export default function App() {
 }
 
 function Frame() {
-  const { resetKey, sceneId, variant } = useLab()
+  const { resetKey, sceneId, variant, demo } = useLab()
   const impl = IMPLS[variant] ?? {}
   const world = useMemo(() => {
     const w = buildWorld(sceneId)
     return impl.transformWorld ? impl.transformWorld(w) : w
   }, [sceneId, resetKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const scene = SCENE_BY_ID.get(sceneId)!
-  const entry = impl.entry?.(scene.entry, world) ?? prodEntry(scene.entry, world)
+  // Показ клієнту: кожна сцена відкривається одразу там, де її дивляться.
+  const demoEntry: Record<string, Route> = {
+    'no-reply': { screen: 'calls', tab: 'messengers' },
+    'mixed-day': { screen: 'cp', id: 'cp-koval' },
+    'regular-ul': { screen: 'cp', id: 'cp-ul' },
+  }
+  const entry =
+    demo && demoEntry[sceneId]
+      ? { route: demoEntry[sceneId], drawer: null }
+      : impl.entry?.(scene.entry, world) ?? prodEntry(scene.entry, world)
   return (
     <>
       <StoreProvider key={resetKey} initial={world}>
@@ -43,7 +54,7 @@ function Frame() {
           <Screens />
         </NavProvider>
       </StoreProvider>
-      <LabWidget />
+      {demo ? <DemoPanel /> : <LabWidget />}
       <Toaster />
     </>
   )

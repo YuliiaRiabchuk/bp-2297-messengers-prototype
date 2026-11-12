@@ -43,9 +43,10 @@ export interface CardSlots {
 export function CounterpartyPage({ id, slots = {} }: { id: string; slots?: CardSlots }) {
   const { world } = useStore()
   const { go } = useNav()
-  const { card: labLayout } = useLab()
+  const { card: labLayout, demo } = useLab()
   const layout = slots.forceLayout ?? labLayout
-  const [tab, setTab] = useState<'card' | 'comms'>('card')
+  // У показі клієнту картка відкривається одразу на «Комунікаціях».
+  const [tab, setTab] = useState<'card' | 'comms'>(demo ? 'comms' : 'card')
   const cp = cpById(world, id)
   if (!cp) return <WidgetEmpty>Контрагента не знайдено.</WidgetEmpty>
   const thread = threadOfCp(world, cp.id)

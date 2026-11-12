@@ -25,6 +25,33 @@ export const CARD_LAYOUTS: { key: CardLayout; label: string; note: string }[] = 
 ]
 const isLayout = (v: string | null | undefined): v is CardLayout => v === 'widget' || v === 'history' || v === 'tabs'
 
+/**
+ * Режим показу клієнту (`?demo=1`): тільки варіант Д і три сцени простою
+ * мовою. Повний режим з усіма варіантами — за звичайним посиланням.
+ */
+export const DEMO_VARIANT = 'Д'
+export const DEMO_SCENES: { id: string; title: string; hint: string; role: Role }[] = [
+  {
+    id: 'no-reply',
+    title: 'Клієнт пише в Telegram',
+    hint: 'Повідомлення падає у «Месенджери». Відкрийте його й відповідайте. Перейдіть у «Каталог» — чат лишиться відкритим у куті.',
+    role: 'operator',
+  },
+  {
+    id: 'mixed-day',
+    title: 'Дзвінки й переписка разом',
+    hint: 'Клієнт дзвонив і писав — усе в одній стрічці по днях. Біля кожного повідомлення видно канал і хто відповідав.',
+    role: 'operator',
+  },
+  {
+    id: 'regular-ul',
+    title: 'Картка постійного клієнта',
+    hint: 'Вкладка «Комунікації»: угорі — скільки оренд і повідомлень, праворуч — досьє, у центрі — уся переписка. «Підсумок» — коротко про останню розмову.',
+    role: 'head',
+  },
+]
+export const isDemo = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1'
+
 interface ViewState {
   sceneId: string
   variant: string
@@ -42,6 +69,8 @@ interface LabState extends ViewState {
   setCard: (card: CardLayout) => void
   hidden: boolean
   setHidden: (v: boolean) => void
+  /** Режим показу клієнту. */
+  demo: boolean
 }
 
 const LabContext = createContext<LabState | null>(null)
@@ -81,12 +110,18 @@ function readStorage(): Partial<ViewState> {
 export function LabProvider({ children }: { children: ReactNode }) {
   const url = readUrl()
   const stored = readStorage()
-  const [view, setView] = useState<ViewState>({
-    sceneId: (SCENE_BY_ID.get(url.sceneId ?? stored.sceneId ?? '') ?? SCENES[0]).id,
-    variant: url.variant ?? (isVariant(stored.variant) ? stored.variant : VARIANTS[0].code),
-    role: url.role ?? (isRole(stored.role) ? stored.role : 'operator'),
-    card: url.card ?? (isLayout(stored.card) ? stored.card : 'widget'),
-  })
+  const [demo] = useState(isDemo)
+  const demoScene = DEMO_SCENES.find((s) => s.id === url.sceneId) ?? DEMO_SCENES[0]
+  const [view, setView] = useState<ViewState>(() =>
+    demo
+      ? { sceneId: demoScene.id, variant: DEMO_VARIANT, role: demoScene.role, card: 'tabs' }
+      : {
+          sceneId: (SCENE_BY_ID.get(url.sceneId ?? stored.sceneId ?? '') ?? SCENES[0]).id,
+          variant: url.variant ?? (isVariant(stored.variant) ? stored.variant : VARIANTS[0].code),
+          role: url.role ?? (isRole(stored.role) ? stored.role : 'operator'),
+          card: url.card ?? (isLayout(stored.card) ? stored.card : 'widget'),
+        },
+  )
   const [hidden, setHidden] = useState(Boolean(url.hidden))
   const [nonce, setNonce] = useState(0)
 
@@ -100,12 +135,13 @@ export function LabProvider({ children }: { children: ReactNode }) {
     if (hidden) q.set('lab', 'off')
     else q.delete('lab')
     window.history.replaceState(null, '', `${window.location.pathname}?${q}`)
+    if (demo) return // показ клієнту не перезаписує збережений повний режим
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(view))
     } catch {
       /* сховище недоступне — посилання все одно працює */
     }
-  }, [view, hidden])
+  }, [view, hidden, demo])
 
   // Ctrl+. ховає віджет цілком: у кадри для бізнесу він не потрапляє.
   useEffect(() => {
@@ -125,15 +161,19 @@ export function LabProvider({ children }: { children: ReactNode }) {
       resetKey: `${view.sceneId}|${view.variant}|${nonce}`,
       resetScene: () => setNonce((n) => n + 1),
       setScene: (sceneId) => {
-        if (SCENE_BY_ID.has(sceneId)) setView((v) => ({ ...v, sceneId }))
+        if (!SCENE_BY_ID.has(sceneId)) return
+        const d = demo ? DEMO_SCENES.find((s) => s.id === sceneId) : undefined
+        if (demo && !d) return
+        setView((v) => ({ ...v, sceneId, ...(d ? { role: d.role } : {}) }))
       },
       setVariant: (variant) => setView((v) => ({ ...v, variant })),
       setRole: (role) => setView((v) => ({ ...v, role })),
       setCard: (card) => setView((v) => ({ ...v, card })),
       hidden,
       setHidden,
+      demo,
     }),
-    [view, nonce, hidden],
+    [view, nonce, hidden, demo],
   )
 
   return <LabContext.Provider value={value}>{children}</LabContext.Provider>
