@@ -1,0 +1,76 @@
+[
+  {
+    "variant": "Д",
+    "poolToReply1": 3,
+    "poolToReply5": 3,
+    "keyboard1": true,
+    "keyboard5": true,
+    "cardToMonth6": 2,
+    "toLost7": null,
+    "components": 1,
+    "replyShift": 0,
+    "scenes": {
+      "1": true,
+      "2": true,
+      "3": true,
+      "4": true,
+      "5": true,
+      "6": true,
+      "7": false,
+      "8": true,
+      "9": true,
+      "10": true,
+      "11": true
+    },
+    "detail": {
+      "s3": {
+        "all4": true,
+        "from": "тред",
+        "counter": "4"
+      },
+      "s1note": null,
+      "hscroll": [],
+      "replyHidden": [],
+      "componentNames": [
+        "simple-chat"
+      ]
+    }
+  },
+  {
+    "variant": "Е",
+    "poolToReply1": 3,
+    "poolToReply5": 3,
+    "keyboard1": true,
+    "keyboard5": true,
+    "cardToMonth6": 2,
+    "toLost7": null,
+    "components": 1,
+    "replyShift": 0,
+    "scenes": {
+      "1": true,
+      "2": true,
+      "3": true,
+      "4": true,
+      "5": true,
+      "6": true,
+      "7": false,
+      "8": false,
+      "9": true,
+      "10": true,
+      "11": true
+    },
+    "detail": {
+      "s3": {
+        "all4": true,
+        "from": "тред",
+        "counter": "4"
+      },
+      "s1note": null,
+      "hscroll": [],
+      "replyHidden": [],
+      "componentNames": [
+        "simple-chat"
+      ]
+    }
+  }
+]

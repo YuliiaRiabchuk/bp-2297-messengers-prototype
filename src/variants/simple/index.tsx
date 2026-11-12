@@ -9,6 +9,7 @@ import { ChatCell, ContactCount, MissedMessageRows, missedMessageRows } from '..
 import { ChatWidget, SimpleChat, type Flavor } from './SimpleChat'
 import { SimplePool, simpleRows } from './SimplePool'
 import { CommsPage } from './CommsPage'
+import { IncomingRequests } from './IncomingRequests'
 
 /**
  * Г — простий чат за PM-синком 10.11. Д — Г + коментарі Уракова (підписи,
@@ -86,7 +87,7 @@ function makeSimple(flavor: Flavor): VariantImpl {
       if (e === 'card') return cp ? { route: { screen: 'cp', id: cp }, drawer: null } : undefined
       return { route: { screen: 'mytasks' }, drawer: null }
     },
-    ...(flavor !== 'Г' ? { keepChat: true, widget: (id: string) => <ChatWidget threadId={id} flavor={flavor} /> } : {}),
+    ...(flavor !== 'Г' ? { keepChat: true, widget: (id: string) => <ChatWidget threadId={id} flavor={flavor} />, overlay: () => <IncomingRequests /> } : {}),
     ...(flavor === 'Е' ? { transformWorld: noViber } : {}),
   }
 }

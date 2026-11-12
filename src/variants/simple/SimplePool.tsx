@@ -12,7 +12,7 @@ import { useStore } from '@/state/store'
 import type { MsgEvent, Thread, World } from '@/mock/types'
 import { ChannelGlyph } from '../chat/Thread'
 import { flatEpisode, SLA_MIN, waitMin } from '../chat/episodes'
-import { ownerFor, type Flavor } from './SimpleChat'
+import { isClosed, ownerFor, type Flavor } from './SimpleChat'
 
 /**
  * Пул варіанта Г — той самий вигляд, що журнал дзвінків: таблиця, групи по
@@ -156,6 +156,8 @@ export function SimplePool({ flavor = 'Г' }: { flavor?: Flavor }) {
                             <Badge variant={overdue ? 'danger' : 'warning'}>Очікує відповіді</Badge>
                             <span className={cn('text-label tabular-nums', overdue ? 'font-medium text-danger-fg' : 'text-warning-fg')}>{fmtGap(r.wait)}</span>
                           </span>
+                        ) : flavor !== 'Г' && isClosed(r.t) ? (
+                          <Badge variant="default">Завершено</Badge>
                         ) : (
                           <Badge variant="success">Відповіли</Badge>
                         )}

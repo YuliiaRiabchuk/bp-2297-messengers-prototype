@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -68,6 +68,12 @@ const CHANNEL_TONE: Record<MsgChannel, string> = {
   'viber-notify': 'text-violet',
 }
 
+/** Діалог завершено кнопкою «Завершити діалог» і після того клієнт не писав. */
+export function isClosed(t: Thread) {
+  const last = t.events[t.events.length - 1]
+  return !!t.closedAt && (!last || t.closedAt >= last.at)
+}
+
 export const ownerFor = (flavor: Flavor) => (flavor === 'Е' ? ownerOfLast : ownerOf) as (w: World, t: Thread) => OwnerEx | null
 
 function dayPill(iso: string, now: string) {
@@ -80,11 +86,12 @@ function dayPill(iso: string, now: string) {
   return toDate(iso).toLocaleDateString('uk-UA', { day: 'numeric', month: 'long', year: sameYear ? undefined : 'numeric' })
 }
 
-function lastOccasion(t: Thread): Occasion | null {
+/** Резерв чи оренда, якої стосується розмова; завершена оренда — вже не привід. */
+function lastOccasion(t: Thread, now: string): Occasion | null {
   for (let i = t.events.length - 1; i >= 0; i--) {
     const e = t.events[i]
     const o = e.kind === 'call' ? e.created : e.kind === 'system' ? e.occasion : undefined
-    if (o) return o
+    if (o && !(o.kind === 'rent' && o.until && o.until < now)) return o
   }
   return null
 }
@@ -109,12 +116,29 @@ export function SimpleChat({
   useLayoutEffect(() => {
     if (feed.current) feed.current.scrollTop = feed.current.scrollHeight
   }, [count, threadId])
+  const { dispatch } = useStore()
+  const { role } = useLab()
+  // T — «Взяти діалог» з клавіатури (Д, Е), як у пулі Б.
+  useEffect(() => {
+    if (host !== 'drawer' || flavor === 'Г' || !t) return
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)
+      if (typing || e.ctrlKey || e.metaKey || e.altKey || e.code !== 'KeyT') return
+      if (role === 'head' || ownerOf(world, t)) return
+      e.preventDefault()
+      dispatch({ type: 'TAKE', threadId: t.id, staffId: ME_BY_ROLE[role] })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [host, flavor, t, role, world, dispatch])
   if (!t) return null
   const threads = flavor === 'Е' && host === 'card'
+  const dialog = flavor !== 'Г'
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-chat-component="simple-chat" data-testid="thread">
       <Header world={world} t={t} host={host} flavor={flavor} onClose={onClose} />
+      {dialog && <DialogBar world={world} t={t} />}
       <div ref={feed} className="min-h-0 flex-1 overflow-y-auto bg-muted/50 px-4 py-3" data-testid="thread-feed">
         <div className={cn('mx-auto flex flex-col gap-1', host === 'card' && 'max-w-[760px]')}>
           {!t.events.some((e) => e.kind === 'msg') && (
@@ -229,7 +253,7 @@ function Header({ world, t, host, flavor, onClose }: { world: World; t: Thread; 
   const cp = cpById(world, t.counterpartyId)
   const owner = ownerFor(flavor)(world, t)
   const taker = staffById(world, owner?.staffId)
-  const occ = lastOccasion(t)
+  const occ = lastOccasion(t, world.now)
   const [open, setOpen] = useState(false)
   const eps = episodesOf(t, world.now)
   const last = eps[eps.length - 1]
@@ -278,7 +302,7 @@ function Header({ world, t, host, flavor, onClose }: { world: World; t: Thread; 
         {taker ? (
           host !== 'drawer' && lead
         ) : (
-          role !== 'head' && (
+          role !== 'head' && flavor === 'Г' && (
             <button
               type="button"
               onClick={() => dispatch({ type: 'TAKE', threadId: t.id, staffId: meId })}
@@ -383,6 +407,39 @@ export function ChatWidget({ threadId, flavor }: { threadId: string; flavor: Fla
         </button>
       </div>
       {!min && <SimpleChat threadId={t.id} host="widget" flavor={flavor} />}
+    </div>
+  )
+}
+
+/* ─── «Взяти діалог» / «Завершити діалог» (Д, Е; як у Ringostat) ─────── */
+
+function DialogBar({ world, t }: { world: World; t: Thread }) {
+  const { dispatch } = useStore()
+  const { role } = useLab()
+  const meId = ME_BY_ROLE[role]
+  const owner = ownerOf(world, t)
+  if (isClosed(t))
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-muted px-4 py-1.5 text-label text-fg-2" data-dialog-state="closed">
+        <span className="size-2 rounded-full bg-subtle" aria-hidden />
+        Діалог завершено о {timeOf(t.closedAt!)}
+      </div>
+    )
+  if (!owner || owner.staffId !== meId) return null
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-success/30 bg-success-soft px-4 py-1.5 text-label text-success-fg" data-dialog-state="active">
+      <span className="size-2 rounded-full bg-success" aria-hidden />
+      <span className="min-w-0 flex-1">Діалог розпочато · з {timeOf(owner.at)}</span>
+      {role !== 'head' && (
+        <button
+          type="button"
+          onClick={() => dispatch({ type: 'CLOSE', threadId: t.id })}
+          className="h-7 shrink-0 rounded-md border border-success/40 bg-card px-2.5 font-semibold text-success-fg hover:bg-success-soft"
+          data-end-dialog=""
+        >
+          Завершити діалог
+        </button>
+      )}
     </div>
   )
 }
@@ -526,8 +583,35 @@ function Composer({ world, t, intent, flavor }: { world: World; t: Thread; inten
   useLayoutEffect(() => {
     if (intent) ref.current?.focus()
   }, [intent])
+  // Узяв діалог — одразу писати.
+  const pendingFocus = useRef(false)
+  const mine = owner?.staffId === meId
+  useEffect(() => {
+    if (mine && (pendingFocus.current || flavor !== 'Г')) {
+      pendingFocus.current = false
+      ref.current?.focus()
+    }
+  }, [mine, flavor])
 
   if (role === 'head') return <p className="shrink-0 border-t border-border px-4 py-2.5 text-label text-fg-2">Керівник читає; відповідає оператор або менеджер.</p>
+  // «Взяти діалог» — лише коли клієнт написав у месенджер; SMS після власного дзвінка оператор пише сам.
+  if (flavor !== 'Г' && !owner && chat && intent !== 'sms')
+    return (
+      <div className="flex shrink-0 items-center gap-3 border-t border-border bg-card px-4 py-2.5">
+        <span className="min-w-0 flex-1 text-label text-fg-2">Новий діалог — ще ніхто не взяв. Хто перший візьме, той і веде.</span>
+        <button
+          type="button"
+          onClick={() => {
+            dispatch({ type: 'TAKE', threadId: t.id, staffId: meId })
+            pendingFocus.current = true
+          }}
+          className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-fg px-4 text-body font-semibold text-primary-fg hover:bg-fg-2"
+          data-take=""
+        >
+          Взяти діалог <kbd className="rounded-sm bg-white/15 px-1 font-mono text-mono">T</kbd>
+        </button>
+      </div>
+    )
   if (other) return <p className="shrink-0 border-t border-border px-4 py-2.5 text-label text-fg-2">Розмову веде {staffById(world, owner!.staffId)?.name}.</p>
   if (!channel) return <p className="shrink-0 border-t border-border px-4 py-2.5 text-label text-muted-fg">Відповісти нікуди: немає ні месенджера, ні номера.</p>
 

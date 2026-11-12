@@ -23,6 +23,8 @@ export interface VariantImpl {
   entry?: (e: Entry, w: World) => { route: Route; drawer: Drawer } | undefined
   /** Перехід по CRM згортає відкритий чат у віджет (Д, Е). */
   keepChat?: boolean
+  /** Поверх будь-якого екрана: «Нові запити» (Д, Е). */
+  overlay?: () => ReactNode
   /** Віджет чату поверх CRM. */
   widget?: (threadId: string) => ReactNode
   /** Перетворення даних сцени під скоуп варіанта (Е: Viber поза скоупом). */

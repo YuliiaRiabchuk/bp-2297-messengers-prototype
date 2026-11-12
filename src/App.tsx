@@ -78,6 +78,7 @@ function Screens() {
       {route.screen === 'mytasks' && <MyTasksPage />}
       {route.screen === 'stub' && <StubPage name={route.name} />}
       {dock && impl.widget?.(dock)}
+      {impl.overlay?.()}
     </Shell>
   )
 }

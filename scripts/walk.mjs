@@ -134,6 +134,8 @@ async function poolToReply(v, scene) {
   const tid = w.focus.threadId
   const run = new Run()
   if (!(await run.click(`[data-pool-row][data-thread="${tid}"]`))) return { clicks: null, ok: false, note: 'пулу немає' }
+  // Д, Е: поле з'являється після «Взяти діалог» (як у Ringostat) — це окремий клік.
+  if (!(await has('[data-reply-field]')) && (await has('[data-take]'))) await run.click('[data-take]')
   const field = await page.$('[data-reply-field]')
   if (!field) return { clicks: null, ok: false, note: 'поля відповіді немає' }
   await field.type('Добрий день! Так, є. Поділіться, будь ласка, номером.')
